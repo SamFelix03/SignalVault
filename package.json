@@ -1,0 +1,19 @@
+{
+  "name": "signalvault",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:contracts": "cd contracts && forge build",
+    "deploy:testnet": "cd contracts && forge script script/DeployAll.s.sol --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY",
+    "test:contracts": "cd contracts && forge test -vvv"
+  },
+  "dependencies": {
+    "@somnia-chain/reactivity": "^0.1.10"
+  }
+}
