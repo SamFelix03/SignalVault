@@ -22,7 +22,7 @@ vaultRouter.get('/', (_req: Request, res: Response) => {
 
 vaultRouter.get('/:address', (req: Request, res: Response) => {
   try {
-    const address = getAddress(req.params.address) as Address;
+    const address = getAddress(req.params.address as string) as Address;
     const vault = vaultIndexer.getVault(address);
     if (!vault) {
       res.status(404).json({ error: 'Vault not found' });
@@ -41,7 +41,7 @@ vaultRouter.get('/:address', (req: Request, res: Response) => {
 
 vaultRouter.get('/:address/signals', (req: Request, res: Response) => {
   try {
-    const address = getAddress(req.params.address) as Address;
+    const address = getAddress(req.params.address as string) as Address;
     const signals = vaultIndexer.getVaultSignals(address);
     res.json({ signals });
   } catch (err) {
@@ -52,7 +52,7 @@ vaultRouter.get('/:address/signals', (req: Request, res: Response) => {
 
 vaultRouter.get('/:address/trades', (req: Request, res: Response) => {
   try {
-    const address = getAddress(req.params.address) as Address;
+    const address = getAddress(req.params.address as string) as Address;
     const trades = vaultIndexer.getVaultTrades(address);
     res.json({ trades });
   } catch (err) {
