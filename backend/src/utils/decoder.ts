@@ -1,0 +1,75 @@
+import { decodeEventLog, type Log } from 'viem';
+import { StrategyVaultABI } from '../abis/StrategyVault';
+import { PerformanceLedgerABI } from '../abis/PerformanceLedger';
+
+export interface DecodedSignalUpdated {
+  vault: `0x${string}`;
+  direction: number;
+  sizeBps: number;
+  stopPrice: bigint;
+  reasoningHash: `0x${string}`;
+  reasoningSummary: string;
+}
+
+export interface DecodedTradeSettled {
+  vault: `0x${string}`;
+  follower: `0x${string}`;
+  direction: number;
+  entryPrice: bigint;
+  exitPrice: bigint;
+  pnlBps: bigint;
+  signalHash: `0x${string}`;
+}
+
+export interface DecodedDrawdownUpdated {
+  vault: `0x${string}`;
+  maxDrawdownBps: bigint;
+}
+
+export function decodeSignalUpdated(log: Log): DecodedSignalUpdated {
+  const decoded = decodeEventLog({
+    abi: StrategyVaultABI,
+    eventName: 'SignalUpdated',
+    topics: log.topics,
+    data: log.data,
+  });
+  return {
+    vault: log.address as `0x${string}`,
+    direction: (decoded.args as any).direction,
+    sizeBps: (decoded.args as any).sizeBps,
+    stopPrice: (decoded.args as any).stopPrice,
+    reasoningHash: (decoded.args as any).reasoningHash,
+    reasoningSummary: (decoded.args as any).reasoningSummary ?? '',
+  };
+}
+
+export function decodeTradeSettled(log: Log): DecodedTradeSettled {
+  const decoded = decodeEventLog({
+    abi: PerformanceLedgerABI,
+    eventName: 'TradeSettled',
+    topics: log.topics,
+    data: log.data,
+  });
+  return {
+    vault: log.address as `0x${string}`,
+    follower: (log.topics[2] as `0x${string}`) ?? log.address,
+    direction: (decoded.args as any).direction,
+    entryPrice: (decoded.args as any).entryPrice,
+    exitPrice: (decoded.args as any).exitPrice,
+    pnlBps: (decoded.args as any).pnlBps,
+    signalHash: (decoded.args as any).signalHash,
+  };
+}
+
+export function decodeDrawdownUpdated(log: Log): DecodedDrawdownUpdated {
+  const decoded = decodeEventLog({
+    abi: PerformanceLedgerABI,
+    eventName: 'DrawdownUpdated',
+    topics: log.topics,
+    data: log.data,
+  });
+  return {
+    vault: log.address as `0x${string}`,
+    maxDrawdownBps: (decoded.args as any).drawdownBps ?? BigInt(0),
+  };
+}

@@ -1,0 +1,35 @@
+{
+  "name": "signalvault-backend",
+  "version": "1.0.0",
+  "description": "SignalVault backend services for Somnia blockchain",
+  "main": "dist/api/server.js",
+  "scripts": {
+    "dev": "ts-node src/api/server.ts",
+    "build": "tsc",
+    "start": "node dist/api/server.js",
+    "register-schemas": "ts-node scripts/register-schemas.ts",
+    "seed-demo": "ts-node scripts/seed-demo-data.ts"
+  },
+  "keywords": [
+    "somnia",
+    "blockchain",
+    "trading",
+    "signals"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@somnia-chain/reactivity": "0.1.10",
+    "@somnia-chain/streams": "^0.12.2",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3",
+    "viem": "^2.51.3"
+  }
+}
