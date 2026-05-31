@@ -1,0 +1,136 @@
+export const StrategyVaultABI = [
+  {
+    type: 'function',
+    name: 'getCurrentSignal',
+    inputs: [],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'direction', type: 'int8' },
+          { name: 'sizeBps', type: 'uint16' },
+          { name: 'stopPrice', type: 'uint256' },
+          { name: 'epoch', type: 'uint256' },
+          { name: 'reasoningHash', type: 'bytes32' },
+          { name: 'reasoningSummary', type: 'string' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getFollowers',
+    inputs: [],
+    outputs: [{ name: '', type: 'address[]' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getFollowerConfig',
+    inputs: [{ name: 'follower', type: 'address' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'riskPct', type: 'uint16' },
+          { name: 'maxPositionSize', type: 'uint256' },
+          { name: 'maxSlippageBps', type: 'uint16' },
+          { name: 'stopLossBuffer', type: 'uint256' },
+          { name: 'active', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getSignalHistory',
+    inputs: [
+      { name: 'offset', type: 'uint256' },
+      { name: 'limit', type: 'uint256' },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple[]',
+        components: [
+          { name: 'direction', type: 'int8' },
+          { name: 'sizeBps', type: 'uint16' },
+          { name: 'stopPrice', type: 'uint256' },
+          { name: 'epoch', type: 'uint256' },
+          { name: 'reasoningHash', type: 'bytes32' },
+          { name: 'reasoningSummary', type: 'string' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'signalHistoryLength',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'strategist',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'strategyPrompt',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'performanceFeeBps',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'emergencyMode',
+    inputs: [],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    name: 'SignalUpdated',
+    inputs: [
+      { name: 'signalHash', type: 'bytes32', indexed: true },
+      { name: 'direction', type: 'int8', indexed: false },
+      { name: 'sizeBps', type: 'uint16', indexed: false },
+      { name: 'stopPrice', type: 'uint256', indexed: false },
+      { name: 'reasoningSummary', type: 'string', indexed: false },
+      { name: 'reasoningHash', type: 'bytes32', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'FollowerSubscribed',
+    inputs: [{ name: 'follower', type: 'address', indexed: true }],
+  },
+  {
+    type: 'event',
+    name: 'FollowerUnsubscribed',
+    inputs: [{ name: 'follower', type: 'address', indexed: true }],
+  },
+  {
+    type: 'event',
+    name: 'EmergencyExit',
+    inputs: [
+      { name: 'triggeredBy', type: 'address', indexed: true },
+      { name: 'reason', type: 'string', indexed: false },
+    ],
+  },
+] as const;

@@ -1,0 +1,65 @@
+export const VaultFactoryABI = [
+  {
+    type: 'function',
+    name: 'deployVault',
+    inputs: [
+      { name: 'strategyPrompt', type: 'string' },
+      { name: 'performanceFeeBps', type: 'uint16' },
+      { name: 'maxDrawdownBps', type: 'uint256' },
+    ],
+    outputs: [{ name: 'vaultId', type: 'uint256' }],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    name: 'getDeployment',
+    inputs: [{ name: 'vaultId', type: 'uint256' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'vault', type: 'address' },
+          { name: 'orchestrator', type: 'address' },
+          { name: 'mirrorReactor', type: 'address' },
+          { name: 'stopReactor', type: 'address' },
+          { name: 'drawdownGuard', type: 'address' },
+          { name: 'epochCron', type: 'address' },
+          { name: 'performanceLedger', type: 'address' },
+          { name: 'feeDistributor', type: 'address' },
+          { name: 'strategist', type: 'address' },
+          { name: 'deployedAt', type: 'uint256' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getDeploymentCount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getStrategistVaults',
+    inputs: [{ name: '_strategist', type: 'address' }],
+    outputs: [{ name: '', type: 'address[]' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    name: 'VaultDeployed',
+    inputs: [
+      { name: 'vaultId', type: 'uint256', indexed: true },
+      { name: 'vault', type: 'address', indexed: true },
+      { name: 'strategist', type: 'address', indexed: true },
+      { name: 'orchestrator', type: 'address', indexed: false },
+      { name: 'mirrorReactor', type: 'address', indexed: false },
+      { name: 'stopReactor', type: 'address', indexed: false },
+      { name: 'drawdownGuard', type: 'address', indexed: false },
+      { name: 'epochCron', type: 'address', indexed: false },
+    ],
+  },
+] as const;
