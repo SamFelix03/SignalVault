@@ -15,6 +15,7 @@ interface IInitOrchestrator {
 
 interface IInitMirror {
     function initialize(address, address, address) external;
+    function setPerformanceLedger(address) external;
 }
 
 interface IInitStop {
@@ -155,9 +156,10 @@ contract VaultFactory {
         // Clone + init support contracts
         _deploySupport(dep, performanceFeeBps, maxDrawdownBps);
 
-        // Wire vault
+        // Wire vault and mirror → ledger
         IInitVault(dep.vault).setReactors(dep.mirrorReactor, dep.stopReactor, dep.drawdownGuard);
         IInitVault(dep.vault).setPerformanceLedger(dep.performanceLedger);
+        IInitMirror(dep.mirrorReactor).setPerformanceLedger(dep.performanceLedger);
 
         // Transfer ownership from factory to strategist
         ITransferOwnership(dep.vault).transferOwnership(dep.strategist);

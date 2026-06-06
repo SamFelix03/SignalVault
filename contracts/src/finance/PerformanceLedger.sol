@@ -47,8 +47,10 @@ contract PerformanceLedger {
         _;
     }
 
-    modifier onlyVaultOrOwner() {
-        require(msg.sender == vault || msg.sender == owner, "not authorized");
+    mapping(address => bool) public authorizedCallers;
+
+    modifier onlyAuthorized() {
+        require(msg.sender == vault || msg.sender == owner || authorizedCallers[msg.sender], "not authorized");
         _;
     }
 
@@ -69,9 +71,13 @@ contract PerformanceLedger {
         oracle = AggregatorV3Interface(_oracle);
     }
 
+    function addAuthorizedCaller(address caller) external onlyOwner {
+        authorizedCallers[caller] = true;
+    }
+
     function recordTrade(
         int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size
-    ) external onlyVaultOrOwner nonReentrant {
+    ) external onlyAuthorized nonReentrant {
         int256 pnl;
         if (direction > 0) {
             pnl = int256(exitPrice) - int256(entryPrice);

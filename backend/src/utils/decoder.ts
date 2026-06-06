@@ -50,14 +50,15 @@ export function decodeTradeSettled(log: Log): DecodedTradeSettled {
     topics: log.topics,
     data: log.data,
   });
+  const args = decoded.args as any;
   return {
     vault: log.address as `0x${string}`,
-    follower: (log.topics[2] as `0x${string}`) ?? log.address,
-    direction: (decoded.args as any).direction,
-    entryPrice: (decoded.args as any).entryPrice,
-    exitPrice: (decoded.args as any).exitPrice,
-    pnlBps: (decoded.args as any).pnlBps,
-    signalHash: (decoded.args as any).signalHash,
+    follower: log.address as `0x${string}`,
+    direction: args.direction,
+    entryPrice: args.entryPrice,
+    exitPrice: args.exitPrice,
+    pnlBps: args.pnl ?? BigInt(0),
+    signalHash: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
   };
 }
 
@@ -68,8 +69,9 @@ export function decodeDrawdownUpdated(log: Log): DecodedDrawdownUpdated {
     topics: log.topics,
     data: log.data,
   });
+  const args = decoded.args as any;
   return {
-    vault: log.address as `0x${string}`,
-    maxDrawdownBps: (decoded.args as any).drawdownBps ?? BigInt(0),
+    vault: args.vault ?? (log.topics[1] ? ('0x' + log.topics[1].slice(26)) as `0x${string}` : log.address as `0x${string}`),
+    maxDrawdownBps: args.maxDrawdownBps ?? BigInt(0),
   };
 }

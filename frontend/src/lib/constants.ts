@@ -15,19 +15,25 @@ export const BTC_USD_ORACLE = '0xa57d637618252669fD859B1F4C7bE6F52Bef67ed' as Ad
 export const ETH_USD_ORACLE = '0xeC25a820A6F194118ef8274216a7F225Da019526' as Address
 
 // ── SignalVault Deployed Contracts (Somnia Testnet) ─────────────────
-export const VAULT_FACTORY_ADDRESS = '0xEC4c2EbDC3ead82C842c8932d7956Dca49e68C0E' as Address
+export const VAULT_FACTORY_ADDRESS = '0x4C6F12b2Fd56D9B227a2196137e6478692a73B21' as Address
 
-// First vault deployed via factory.deployVault() — fully on-chain EIP-1167 clones
-export const DEMO_VAULT_ADDRESS = '0x95262AeaD21e5c98B92aC366640f816f5F0d62b5' as Address
-export const DEMO_ORCHESTRATOR_ADDRESS = '0xA62F01B0De722F0b97f4D789C75E7d152DE0B0F1' as Address
+// Demo vault deployed via factory.deployVault()
+export const DEMO_VAULT_ADDRESS = '0x76695CBcB0e47a8D5af1360552d71e3950a4849E' as Address
+export const DEMO_ORCHESTRATOR_ADDRESS = '0x1C2CE05330EAe2B922722213d34163371484520A' as Address
+export const DEMO_MIRROR_REACTOR = '0xBaBD72AE1479C34e248a4792305FD969013383Dd' as Address
+export const DEMO_STOP_REACTOR = '0xA32039f84Eb437f49Fd2F3682C48C6BA487C1ee6' as Address
+export const DEMO_DRAWDOWN_GUARD = '0x56bc7a23236B898484bc3B2C1f115eBd98a52C8C' as Address
+export const DEMO_EPOCH_CRON = '0x03c23E8991f9788b608f1C869b32adDCA419a70b' as Address
+export const DEMO_PERFORMANCE_LEDGER = '0xE913ae3029d9F9A7c6BC08d3814D464C97A06101' as Address
+export const DEMO_FEE_DISTRIBUTOR = '0x4c5Bb18079F4676B58f35b40Df33576088eBD1c2' as Address
 
 // ── Backend API ─────────────────────────────────────────────────────
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
 // ── Agent IDs ───────────────────────────────────────────────────────
 export const JSON_API_AGENT_ID = BigInt('13174292974160097713')
-export const LLM_PARSE_AGENT_ID = BigInt('13174292974160097713')
-export const LLM_INFER_AGENT_ID = BigInt('13174292974160097713')
+export const LLM_PARSE_AGENT_ID = BigInt('12875401142070969085')
+export const LLM_INFER_AGENT_ID = BigInt('12847293847561029384')
 
 // ── Agent Costs (STT) ──────────────────────────────────────────────
 export const JSON_FETCH_COST = 0.03

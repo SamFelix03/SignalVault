@@ -6,10 +6,15 @@ import {SomniaExtensions} from "@somnia-chain/reactivity-contracts/contracts/int
 import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
 import {IDreamDEX} from "../interfaces/IDreamDEX.sol";
 
+interface IPerformanceLedger {
+    function recordTrade(int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size) external;
+}
+
 contract MirrorReactor is SomniaEventHandler {
     address public owner;
     address public vault;
     IDreamDEX public dex;
+    address public performanceLedger;
     bool private _initialized;
 
     bytes32 public constant SIGNAL_UPDATED_TOPIC = keccak256("SignalUpdated(bytes32,int8,uint16,uint256,string,bytes32)");
@@ -34,6 +39,11 @@ contract MirrorReactor is SomniaEventHandler {
         owner = _owner;
         vault = _vault;
         dex = IDreamDEX(_dex);
+    }
+
+    function setPerformanceLedger(address _ledger) external {
+        require(msg.sender == owner || performanceLedger == address(0), "not authorized");
+        performanceLedger = _ledger;
     }
 
     function registerSubscription() external onlyOwner {

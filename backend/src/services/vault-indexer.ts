@@ -11,6 +11,11 @@ export interface VaultInfo {
   vaultId: number;
   strategist: Address;
   orchestrator: Address;
+  performanceLedger: Address;
+  feeDistributor: Address;
+  drawdownGuard: Address;
+  epochCron: Address;
+  deployedAt: string;
   strategyPrompt: string;
   performanceFeeBps: number;
   followerCount: number;
@@ -124,6 +129,11 @@ class VaultIndexer {
         vaultId,
         strategist: strategist as Address,
         orchestrator: dep.orchestrator,
+        performanceLedger: dep.performanceLedger,
+        feeDistributor: dep.feeDistributor,
+        drawdownGuard: dep.drawdownGuard,
+        epochCron: dep.epochCron,
+        deployedAt: dep.deployedAt.toString(),
         strategyPrompt: strategyPrompt as string,
         performanceFeeBps: Number(performanceFeeBps),
         followerCount,
@@ -204,6 +214,15 @@ class VaultIndexer {
 
   getVault(address: Address): VaultInfo | undefined {
     return this.vaults.get(address);
+  }
+
+  getVaultByOrchestrator(orchestratorAddress: Address): VaultInfo | undefined {
+    for (const vault of this.vaults.values()) {
+      if (vault.orchestrator.toLowerCase() === orchestratorAddress.toLowerCase()) {
+        return vault;
+      }
+    }
+    return undefined;
   }
 
   getVaultSignals(address: Address): SignalRecord[] {

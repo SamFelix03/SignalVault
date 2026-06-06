@@ -2,14 +2,15 @@
 
 import { useReadContract, useAccount } from 'wagmi'
 import { type Address } from 'viem'
-import { vaultConfig } from '@/lib/contracts'
+import { StrategyVaultABI } from '@/abis/StrategyVault'
 import type { FollowerConfig } from '@/types/vault'
 
 export function useFollowerPosition(vaultAddress: Address) {
   const { address } = useAccount()
 
   const { data, isLoading, error, refetch } = useReadContract({
-    ...vaultConfig(vaultAddress),
+    address: vaultAddress,
+    abi: StrategyVaultABI,
     functionName: 'getFollowerConfig',
     args: address ? [address] : undefined,
     query: {

@@ -1,12 +1,13 @@
 import { SDK as StreamsSDK, SchemaEncoder, zeroBytes32 } from '@somnia-chain/streams';
 import { SDK as ReactivitySDK, type SubscriptionCallback } from '@somnia-chain/reactivity';
-import { keccak256, toBytes, toHex, createPublicClient, webSocket, type Address } from 'viem';
+import { keccak256, toBytes, toHex, createPublicClient, webSocket, type Address, type Log } from 'viem';
 import { publicClient, getWalletClient, config } from '../config/chains';
 import { somniaTestnet } from '../config/chains';
 import { SIGNAL_SCHEMA, PNL_SCHEMA, VAULT_META_SCHEMA } from '../config/schemas';
 import { WS_RPC_URL } from '../config/constants';
 import { vaultIndexer } from './vault-indexer';
 import { logger } from '../utils/logger';
+import { decodeSignalUpdated, decodeTradeSettled, decodeDrawdownUpdated } from '../utils/decoder';
 
 const CTX = 'StreamPublisher';
 
@@ -134,23 +135,38 @@ class StreamPublisher {
     }
   }
 
+  private toLog(data: SubscriptionCallback): Log {
+    const result = data.result as any;
+    return {
+      address: (result.address ?? '0x0000000000000000000000000000000000000000') as Address,
+      topics: result.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
+      data: result.data as `0x${string}`,
+      blockHash: (result.blockHash ?? '0x0') as `0x${string}`,
+      blockNumber: BigInt(result.blockNumber ?? 0),
+      transactionHash: (result.transactionHash ?? '0x0') as `0x${string}`,
+      transactionIndex: Number(result.transactionIndex ?? 0),
+      logIndex: Number(result.logIndex ?? 0),
+      removed: false,
+    };
+  }
+
   private async publishSignal(data: SubscriptionCallback): Promise<void> {
     if (!this.streamsSDK || !this.schemaIds) return;
 
     try {
-      const topics = data.result.topics;
-      const vaultAddress = `0x${topics[1]?.slice(26)}` as Address;
+      const log = this.toLog(data);
+      const decoded = decodeSignalUpdated(log);
       const encoder = new SchemaEncoder(SIGNAL_SCHEMA);
 
       const now = BigInt(Math.floor(Date.now() / 1000));
       const payload = encoder.encodeData([
         { name: 'timestamp', value: now, type: 'uint64' },
-        { name: 'vault', value: vaultAddress, type: 'address' },
-        { name: 'direction', value: BigInt(0), type: 'int8' },
-        { name: 'sizeBps', value: BigInt(0), type: 'uint16' },
-        { name: 'stopPrice', value: BigInt(0), type: 'uint256' },
-        { name: 'reasoningHash', value: zeroBytes32, type: 'bytes32' },
-        { name: 'reasoning', value: '', type: 'string' },
+        { name: 'vault', value: decoded.vault, type: 'address' },
+        { name: 'direction', value: BigInt(decoded.direction), type: 'int8' },
+        { name: 'sizeBps', value: BigInt(decoded.sizeBps), type: 'uint16' },
+        { name: 'stopPrice', value: decoded.stopPrice, type: 'uint256' },
+        { name: 'reasoningHash', value: decoded.reasoningHash, type: 'bytes32' },
+        { name: 'reasoning', value: decoded.reasoningSummary, type: 'string' },
       ]);
 
       const dataId = toHex(`signal-${Date.now()}`, { size: 32 });
@@ -158,14 +174,14 @@ class StreamPublisher {
         { id: dataId, schemaId: this.schemaIds.signal, data: payload },
       ]);
 
-      logger.info(CTX, `Published signal for vault ${vaultAddress}`, { tx });
+      logger.info(CTX, `Published signal for vault ${decoded.vault}`, { tx, direction: decoded.direction, sizeBps: decoded.sizeBps });
 
-      vaultIndexer.addSignalRecord(vaultAddress, {
-        direction: 0,
-        sizeBps: 0,
-        stopPrice: '0',
-        reasoningHash: zeroBytes32,
-        reasoningSummary: '',
+      vaultIndexer.addSignalRecord(decoded.vault, {
+        direction: decoded.direction,
+        sizeBps: decoded.sizeBps,
+        stopPrice: decoded.stopPrice.toString(),
+        reasoningHash: decoded.reasoningHash,
+        reasoningSummary: decoded.reasoningSummary,
         epoch: now.toString(),
       });
     } catch (err) {
@@ -177,21 +193,20 @@ class StreamPublisher {
     if (!this.streamsSDK || !this.schemaIds) return;
 
     try {
-      const topics = data.result.topics;
-      const vaultAddress = `0x${topics[1]?.slice(26)}` as Address;
-      const followerAddress = `0x${topics[2]?.slice(26)}` as Address;
+      const log = this.toLog(data);
+      const decoded = decodeTradeSettled(log);
       const encoder = new SchemaEncoder(PNL_SCHEMA);
 
       const now = BigInt(Math.floor(Date.now() / 1000));
       const payload = encoder.encodeData([
         { name: 'timestamp', value: now, type: 'uint64' },
-        { name: 'vault', value: vaultAddress, type: 'address' },
-        { name: 'follower', value: followerAddress, type: 'address' },
-        { name: 'direction', value: BigInt(0), type: 'int8' },
-        { name: 'entryPrice', value: BigInt(0), type: 'uint256' },
-        { name: 'exitPrice', value: BigInt(0), type: 'uint256' },
-        { name: 'pnlBps', value: BigInt(0), type: 'int256' },
-        { name: 'signalHash', value: zeroBytes32, type: 'bytes32' },
+        { name: 'vault', value: decoded.vault, type: 'address' },
+        { name: 'follower', value: decoded.follower, type: 'address' },
+        { name: 'direction', value: BigInt(decoded.direction), type: 'int8' },
+        { name: 'entryPrice', value: decoded.entryPrice, type: 'uint256' },
+        { name: 'exitPrice', value: decoded.exitPrice, type: 'uint256' },
+        { name: 'pnlBps', value: decoded.pnlBps, type: 'int256' },
+        { name: 'signalHash', value: decoded.signalHash, type: 'bytes32' },
       ]);
 
       const dataId = toHex(`pnl-${Date.now()}`, { size: 32 });
@@ -199,16 +214,16 @@ class StreamPublisher {
         { id: dataId, schemaId: this.schemaIds.pnl, data: payload },
       ]);
 
-      logger.info(CTX, `Published PnL for vault ${vaultAddress}`, { tx });
+      logger.info(CTX, `Published PnL for vault ${decoded.vault}`, { tx, pnlBps: decoded.pnlBps.toString() });
 
-      vaultIndexer.addTradeRecord(vaultAddress, {
-        vault: vaultAddress,
-        follower: followerAddress,
-        direction: 0,
-        entryPrice: '0',
-        exitPrice: '0',
-        pnlBps: '0',
-        signalHash: zeroBytes32,
+      vaultIndexer.addTradeRecord(decoded.vault, {
+        vault: decoded.vault,
+        follower: decoded.follower,
+        direction: decoded.direction,
+        entryPrice: decoded.entryPrice.toString(),
+        exitPrice: decoded.exitPrice.toString(),
+        pnlBps: decoded.pnlBps.toString(),
+        signalHash: decoded.signalHash,
       });
     } catch (err) {
       logger.error(CTX, 'Failed to publish PnL', err);
@@ -219,22 +234,22 @@ class StreamPublisher {
     if (!this.streamsSDK || !this.schemaIds) return;
 
     try {
-      const topics = data.result.topics;
-      const vaultAddress = `0x${topics[1]?.slice(26)}` as Address;
+      const log = this.toLog(data);
+      const decoded = decodeDrawdownUpdated(log);
       const encoder = new SchemaEncoder(VAULT_META_SCHEMA);
 
-      const vault = vaultIndexer.getVault(vaultAddress);
+      const vault = vaultIndexer.getVault(decoded.vault);
       const now = BigInt(Math.floor(Date.now() / 1000));
 
       const payload = encoder.encodeData([
         { name: 'timestamp', value: now, type: 'uint64' },
-        { name: 'vault', value: vaultAddress, type: 'address' },
-        { name: 'strategist', value: (vault?.strategist || vaultAddress) as Address, type: 'address' },
+        { name: 'vault', value: decoded.vault, type: 'address' },
+        { name: 'strategist', value: (vault?.strategist || decoded.vault) as Address, type: 'address' },
         { name: 'name', value: vault?.strategyPrompt?.slice(0, 50) || 'Unknown', type: 'string' },
         { name: 'performanceFeeBps', value: BigInt(vault?.performanceFeeBps || 0), type: 'uint16' },
         { name: 'followerCount', value: BigInt(vault?.followerCount || 0), type: 'uint256' },
         { name: 'sharpe30dBps', value: BigInt(0), type: 'int256' },
-        { name: 'maxDrawdownBps', value: BigInt(0), type: 'uint256' },
+        { name: 'maxDrawdownBps', value: decoded.maxDrawdownBps, type: 'uint256' },
       ]);
 
       const dataId = toHex(`meta-${Date.now()}`, { size: 32 });
@@ -242,7 +257,7 @@ class StreamPublisher {
         { id: dataId, schemaId: this.schemaIds.vaultMeta, data: payload },
       ]);
 
-      logger.info(CTX, `Published vault meta for ${vaultAddress}`, { tx });
+      logger.info(CTX, `Published vault meta for ${decoded.vault}`, { tx, maxDrawdownBps: decoded.maxDrawdownBps.toString() });
     } catch (err) {
       logger.error(CTX, 'Failed to publish vault meta', err);
     }

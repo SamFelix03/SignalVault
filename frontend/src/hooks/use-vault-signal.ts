@@ -8,7 +8,7 @@ import type { Signal } from '@/types/vault'
 export function useVaultSignal(vaultAddress: Address) {
   const { data, isLoading, error, refetch } = useReadContract({
     ...vaultConfig(vaultAddress),
-    functionName: 'getCurrentSignal',
+    functionName: 'currentSignal',
     query: {
       refetchInterval: 10_000,
     },

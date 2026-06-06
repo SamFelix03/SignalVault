@@ -1,7 +1,7 @@
 export const StrategyVaultABI = [
   {
     type: 'function',
-    name: 'getCurrentSignal',
+    name: 'currentSignal',
     inputs: [],
     outputs: [
       {
@@ -17,6 +17,13 @@ export const StrategyVaultABI = [
         ],
       },
     ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'followerCount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
@@ -47,6 +54,32 @@ export const StrategyVaultABI = [
   },
   {
     type: 'function',
+    name: 'subscribe',
+    inputs: [
+      {
+        name: 'config',
+        type: 'tuple',
+        components: [
+          { name: 'riskPct', type: 'uint16' },
+          { name: 'maxPositionSize', type: 'uint256' },
+          { name: 'maxSlippageBps', type: 'uint16' },
+          { name: 'stopLossBuffer', type: 'uint256' },
+          { name: 'active', type: 'bool' },
+        ],
+      },
+    ],
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    name: 'unsubscribe',
+    inputs: [],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     name: 'getSignalHistory',
     inputs: [
       { name: 'offset', type: 'uint256' },
@@ -67,6 +100,13 @@ export const StrategyVaultABI = [
       },
     ],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'emergencyExit',
+    inputs: [{ name: 'reason', type: 'string' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -116,32 +156,6 @@ export const StrategyVaultABI = [
     inputs: [],
     outputs: [{ name: '', type: 'address' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    name: 'subscribe',
-    inputs: [
-      {
-        name: 'config',
-        type: 'tuple',
-        components: [
-          { name: 'riskPct', type: 'uint16' },
-          { name: 'maxPositionSize', type: 'uint256' },
-          { name: 'maxSlippageBps', type: 'uint16' },
-          { name: 'stopLossBuffer', type: 'uint256' },
-          { name: 'active', type: 'bool' },
-        ],
-      },
-    ],
-    outputs: [],
-    stateMutability: 'payable',
-  },
-  {
-    type: 'function',
-    name: 'unsubscribe',
-    inputs: [],
-    outputs: [],
-    stateMutability: 'nonpayable',
   },
   {
     type: 'event',

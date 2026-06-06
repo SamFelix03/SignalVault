@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { vaultRouter } from './routes/vaults';
 import { receiptRouter } from './routes/receipts';
+import { pipelineRouter } from './routes/pipeline';
 import { vaultIndexer } from '../services/vault-indexer';
 import { streamPublisher } from '../services/stream-publisher';
 import { logger } from '../utils/logger';
@@ -27,6 +28,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/vaults', vaultRouter);
 app.use('/api/receipts', receiptRouter);
+app.use('/api/pipeline', pipelineRouter);
 
 async function bootstrap(): Promise<void> {
   try {
