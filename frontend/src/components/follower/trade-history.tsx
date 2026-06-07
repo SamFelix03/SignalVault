@@ -2,9 +2,18 @@
 
 import Link from 'next/link'
 import { FileSearch } from 'lucide-react'
-import { cn, directionLabel, formatPrice, formatPnlPercent, timeAgo } from '@/lib/utils'
+import { cn, formatPrice, formatPnlPercent, timeAgo } from '@/lib/utils'
 import { SignalIndicator } from '@/components/leaderboard/signal-indicator'
 import type { TradeRecord } from '@/types/vault'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 interface TradeHistoryProps {
   trades: TradeRecord[]
@@ -14,72 +23,67 @@ interface TradeHistoryProps {
 export function TradeHistory({ trades, vaultAddress }: TradeHistoryProps) {
   if (trades.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-8 text-center backdrop-blur-sm">
-        <p className="text-zinc-500">No trades yet</p>
-      </div>
+      <Card>
+        <CardContent className="p-8 text-center">
+          <p className="text-muted-foreground">No trades yet</p>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 backdrop-blur-sm">
-      <div className="border-b border-zinc-800/50 px-6 py-4">
-        <h2 className="text-sm font-medium uppercase tracking-wider text-zinc-500">Trade History</h2>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-zinc-800/30 text-xs text-zinc-500">
-              <th className="px-6 py-3 text-left font-medium">Direction</th>
-              <th className="px-6 py-3 text-right font-medium">Entry</th>
-              <th className="px-6 py-3 text-right font-medium">Exit</th>
-              <th className="px-6 py-3 text-right font-medium">PnL</th>
-              <th className="px-6 py-3 text-right font-medium">Time</th>
-              <th className="px-6 py-3 text-center font-medium">Reasoning</th>
-            </tr>
-          </thead>
-          <tbody>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Trade History</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Direction</TableHead>
+              <TableHead className="text-right">Entry</TableHead>
+              <TableHead className="text-right">Exit</TableHead>
+              <TableHead className="text-right">PnL</TableHead>
+              <TableHead className="text-right">Time</TableHead>
+              <TableHead className="text-center">Reasoning</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {trades.map((trade, i) => (
-              <tr
-                key={`${trade.epoch}-${i}`}
-                className={cn(
-                  'border-b border-zinc-800/20 transition-colors hover:bg-zinc-800/20',
-                  i % 2 === 0 ? 'bg-transparent' : 'bg-zinc-900/20'
-                )}
-              >
-                <td className="px-6 py-3">
+              <TableRow key={`${trade.epoch}-${i}`} className="group">
+                <TableCell>
                   <SignalIndicator direction={trade.direction} size="sm" pulse={false} />
-                </td>
-                <td className="px-6 py-3 text-right font-mono text-sm text-zinc-300">
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
                   ${formatPrice(Number(trade.entryPrice))}
-                </td>
-                <td className="px-6 py-3 text-right font-mono text-sm text-zinc-300">
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
                   ${formatPrice(Number(trade.exitPrice))}
-                </td>
-                <td className={cn('px-6 py-3 text-right font-mono text-sm font-semibold', trade.pnl >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                </TableCell>
+                <TableCell className={cn('text-right font-mono text-sm font-semibold', trade.pnl >= 0 ? 'text-success' : 'text-destructive')}>
                   {formatPnlPercent(trade.pnlPercent)}
-                </td>
-                <td className="px-6 py-3 text-right text-sm text-zinc-500">
+                </TableCell>
+                <TableCell className="text-right text-sm text-muted-foreground">
                   {trade.timestamp ? timeAgo(trade.timestamp) : '—'}
-                </td>
-                <td className="px-6 py-3 text-center">
+                </TableCell>
+                <TableCell className="text-center">
                   {trade.reasoningHash ? (
                     <Link
-                      href={`/vault/${vaultAddress}/audit/${trade.reasoningHash}`}
-                      className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      href={vaultAddress ? `/vault/${vaultAddress}/audit/${trade.reasoningHash}` : '#'}
+                      className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors"
                     >
                       <FileSearch className="h-3.5 w-3.5" />
                       View
                     </Link>
                   ) : (
-                    <span className="text-xs text-zinc-600">—</span>
+                    <span className="text-xs text-muted-foreground">—</span>
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   )
 }

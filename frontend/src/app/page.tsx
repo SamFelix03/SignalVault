@@ -1,18 +1,35 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { Search, SlidersHorizontal } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { useVaultList } from '@/hooks/use-vault-list'
 import { VaultCard } from '@/components/leaderboard/vault-card'
+import { FeaturedVaultCard } from '@/components/leaderboard/featured-vault-card'
+import { LeaderboardStats } from '@/components/leaderboard/leaderboard-stats'
 import { LoadingSpinner } from '@/components/common/loading-spinner'
+import { usePageHeader } from '@/components/layout/page-header-context'
 import { cn } from '@/lib/utils'
+import { Card, CardContent } from '@/components/ui/card'
 
 type SortKey = 'pnl' | 'sharpe' | 'followers'
 
+const sortOptions: { key: SortKey; label: string }[] = [
+  { key: 'pnl', label: '30d PnL' },
+  { key: 'sharpe', label: 'Sharpe' },
+  { key: 'followers', label: 'Followers' },
+]
+
 export default function LeaderboardPage() {
   const { vaults, isLoading, error } = useVaultList()
-  const [search, setSearch] = useState('')
+  const { search, setSearch, setShowSearch } = usePageHeader()
   const [sortBy, setSortBy] = useState<SortKey>('pnl')
+
+  useEffect(() => {
+    setShowSearch(true)
+    return () => {
+      setShowSearch(false)
+      setSearch('')
+    }
+  }, [setShowSearch, setSearch])
 
   const filtered = useMemo(() => {
     let list = vaults
@@ -43,38 +60,46 @@ export default function LeaderboardPage() {
     return list
   }, [vaults, search, sortBy])
 
+  const featured = filtered[0]
+  const rest = filtered.slice(1)
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-100">Vault Leaderboard</h1>
-        <p className="mt-1 text-sm text-zinc-500">Discover and follow autonomous trading vaults on Somnia</p>
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="border-b border-border pb-6">
+        <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Autonomous strategy vaults on Somnia. Signals and reasoning are committed on-chain; followers
+          mirror execution in the same block.
+        </p>
+        {!isLoading && vaults.length > 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {vaults.length} vault{vaults.length !== 1 ? 's' : ''} indexed
+          </p>
+        )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search vaults..."
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900/50 py-2 pl-10 pr-4 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-blue-500/50 focus:outline-none sm:w-72"
-          />
-        </div>
+      {!isLoading && !error && vaults.length > 0 && <LeaderboardStats vaults={vaults} />}
 
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-4 w-4 text-zinc-500" />
-          <span className="text-xs text-zinc-500">Sort by:</span>
-          {(['pnl', 'sharpe', 'followers'] as const).map(key => (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-sm font-medium text-foreground">
+          {search ? `Results for "${search}"` : 'All vaults'}
+          {!isLoading && (
+            <span className="ml-2 font-normal text-muted-foreground">({filtered.length})</span>
+          )}
+        </h2>
+        <div className="flex gap-1 rounded-lg border border-border p-1">
+          {sortOptions.map(({ key, label }) => (
             <button
               key={key}
+              type="button"
               onClick={() => setSortBy(key)}
               className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-all',
-                sortBy === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                sortBy === key
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              {key === 'pnl' ? '30d PnL' : key === 'sharpe' ? 'Sharpe' : 'Followers'}
+              {label}
             </button>
           ))}
         </div>
@@ -85,19 +110,43 @@ export default function LeaderboardPage() {
           <LoadingSpinner size="lg" />
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center">
-          <p className="text-red-400">Failed to load vaults</p>
-          <p className="mt-1 text-sm text-zinc-500">{error.message}</p>
-        </div>
+        <Card className="border-destructive/30">
+          <CardContent className="p-8 text-center">
+            <p className="text-destructive">Failed to load vaults</p>
+            <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-12 text-center backdrop-blur-sm">
-          <p className="text-zinc-400">{search ? 'No vaults match your search' : 'No vaults deployed yet'}</p>
-        </div>
+        <Card>
+          <CardContent className="p-12 text-center">
+            <p className="text-muted-foreground">
+              {search ? 'No vaults match your search' : 'No vaults deployed yet'}
+            </p>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map(vault => (
-            <VaultCard key={vault.address} vault={vault} />
-          ))}
+        <div className="space-y-6">
+          {featured && !search && <FeaturedVaultCard vault={featured} />}
+
+          {(search ? filtered : rest).length > 0 && (
+            <div>
+              {!search && rest.length > 0 && (
+                <p className="mb-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Other vaults
+                </p>
+              )}
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {(search ? filtered : rest).map((vault, i) => (
+                  <VaultCard
+                    key={vault.address}
+                    vault={vault}
+                    index={i}
+                    rank={search ? undefined : i + 2}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

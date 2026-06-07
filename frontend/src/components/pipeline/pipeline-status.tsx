@@ -4,9 +4,14 @@ import { useState } from 'react'
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { type Address, parseEther } from 'viem'
 import { agentOrchestratorAbi } from '@/abis/AgentOrchestrator'
+import { isMockMode } from '@/lib/mock-mode'
+import { mockPipelineDetail } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import { formatPrice, timeAgo } from '@/lib/utils'
 import { Circle, CheckCircle2, Loader2, Play, AlertTriangle } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 
 const STAGE_LABELS: Record<number, string> = {
   0: 'Idle',
@@ -21,7 +26,62 @@ interface PipelineStatusPageProps {
   orchestratorAddress: Address
 }
 
+function MockPipelineStatusView() {
+  const d = mockPipelineDetail
+  const stages = [0, 1, 2, 3, 4, 5]
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-2 text-xs text-warning">
+        Mock pipeline data — trigger button is disabled in demo mode.
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-base">Pipeline Status</CardTitle>
+          <span className="text-xs text-muted-foreground">Run #{d.runId}</span>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Progress value={100} className="h-1.5 [&>div]:bg-accent" />
+          <div className="relative flex items-center justify-between">
+            {stages.map((s) => (
+              <div key={s} className="relative z-10 flex flex-col items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-success bg-success/20">
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                </div>
+                <span className="whitespace-nowrap text-[10px] font-medium text-success">
+                  {STAGE_LABELS[s] ?? `Stage ${s}`}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Started {timeAgo(d.startedAt)}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Fetched Data</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <DataCard label="Price" value={`$${formatPrice(d.fetchedPrice)}`} />
+            <DataCard label="Funding Rate" value={formatPrice(d.fetchedFunding, 6)} />
+            <DataCard label="Fear & Greed" value={d.fearGreedIndex.toString()} />
+            <DataCard label="News Summary" value={d.newsSummary} isText />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export function PipelineStatusPage({ orchestratorAddress }: PipelineStatusPageProps) {
+  if (isMockMode()) return <MockPipelineStatusView />
+  return <LivePipelineStatusPage orchestratorAddress={orchestratorAddress} />
+}
+
+function LivePipelineStatusPage({ orchestratorAddress }: PipelineStatusPageProps) {
   const [triggerError, setTriggerError] = useState<string | null>(null)
 
   const { data: currentRunId, refetch: refetchRunId } = useReadContract({
@@ -50,9 +110,7 @@ export function PipelineStatusPage({ orchestratorAddress }: PipelineStatusPagePr
   })
 
   const { writeContract, data: txHash, isPending } = useWriteContract()
-  const { isLoading: isConfirming } = useWaitForTransactionReceipt({
-    hash: txHash,
-  })
+  const { isLoading: isConfirming } = useWaitForTransactionReceipt({ hash: txHash })
 
   const status = pipelineStatus as [number, number, bigint] | undefined
   const stageNum = status ? Number(status[0]) : 0
@@ -81,95 +139,92 @@ export function PipelineStatusPage({ orchestratorAddress }: PipelineStatusPagePr
   }
 
   const stages = [0, 1, 2, 3, 4, 5]
+  const progress = (stageNum / (stages.length - 1)) * 100
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-6 backdrop-blur-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wider text-zinc-500">Pipeline Status</h2>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-base">Pipeline Status</CardTitle>
           <div className="flex items-center gap-3">
             {isRunning && (
-              <span className="flex items-center gap-1.5 text-xs text-blue-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+              <span className="flex items-center gap-1.5 text-xs text-accent">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
                 Running
               </span>
             )}
             {runId !== undefined && (
-              <span className="text-xs text-zinc-500">Run #{runId.toString()}</span>
+              <span className="text-xs text-muted-foreground">Run #{runId.toString()}</span>
             )}
           </div>
-        </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Progress value={progress} className="h-1.5 [&>div]:bg-accent" />
 
-        <div className="relative flex items-center justify-between">
-          <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-zinc-800" />
-          <div
-            className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 bg-blue-500 transition-all duration-700"
-            style={{ width: `${(stageNum / (stages.length - 1)) * 100}%` }}
-          />
-
-          {stages.map((s) => {
-            const isComplete = s < stageNum
-            const isCurrent = s === stageNum
-            return (
-              <div key={s} className="relative z-10 flex flex-col items-center gap-2">
-                <div
-                  className={cn(
-                    'flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all',
-                    isComplete
-                      ? 'border-emerald-500 bg-emerald-500/20'
-                      : isCurrent && isRunning
-                        ? 'border-blue-500 bg-blue-500/20'
-                        : 'border-zinc-700 bg-zinc-900'
-                  )}
-                >
-                  {isComplete ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                  ) : isCurrent && isRunning ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                  ) : (
-                    <Circle className="h-4 w-4 text-zinc-600" />
-                  )}
+          <div className="relative flex items-center justify-between">
+            {stages.map((s) => {
+              const isComplete = s < stageNum
+              const isCurrent = s === stageNum
+              return (
+                <div key={s} className="relative z-10 flex flex-col items-center gap-2">
+                  <div
+                    className={cn(
+                      'flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all',
+                      isComplete
+                        ? 'border-success bg-success/20'
+                        : isCurrent && isRunning
+                          ? 'border-accent bg-accent/20'
+                          : 'border-border bg-secondary'
+                    )}
+                  >
+                    {isComplete ? (
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                    ) : isCurrent && isRunning ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                    ) : (
+                      <Circle className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </div>
+                  <span
+                    className={cn(
+                      'whitespace-nowrap text-[10px] font-medium',
+                      isComplete ? 'text-success' : isCurrent ? 'text-accent' : 'text-muted-foreground'
+                    )}
+                  >
+                    {STAGE_LABELS[s] ?? `Stage ${s}`}
+                  </span>
                 </div>
-                <span
-                  className={cn(
-                    'text-[10px] font-medium whitespace-nowrap',
-                    isComplete ? 'text-emerald-400' : isCurrent ? 'text-blue-400' : 'text-zinc-600'
-                  )}
-                >
-                  {STAGE_LABELS[s] ?? `Stage ${s}`}
-                </span>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
 
-        {startedAt > 0 && (
-          <p className="mt-4 text-xs text-zinc-500">Started {timeAgo(startedAt)}</p>
-        )}
-      </div>
+          {startedAt > 0 && (
+            <p className="text-xs text-muted-foreground">Started {timeAgo(startedAt)}</p>
+          )}
+        </CardContent>
+      </Card>
 
       {(fetchedPrice > BigInt(0) || newsSummary) && (
-        <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-6 backdrop-blur-sm">
-          <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">Fetched Data</h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <DataCard label="Price" value={`$${formatPrice(fetchedPrice)}`} />
-            <DataCard label="Funding Rate" value={formatPrice(fetchedFunding, 6)} />
-            <DataCard label="Fear & Greed" value={fearGreedIndex.toString()} />
-            <DataCard label="News Summary" value={newsSummary || '—'} isText />
-          </div>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Fetched Data</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <DataCard label="Price" value={`$${formatPrice(fetchedPrice)}`} />
+              <DataCard label="Funding Rate" value={formatPrice(fetchedFunding, 6)} />
+              <DataCard label="Fear & Greed" value={fearGreedIndex.toString()} />
+              <DataCard label="News Summary" value={newsSummary || '—'} isText />
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <div className="flex items-center gap-4">
-        <button
+        <Button
           onClick={handleTrigger}
           disabled={isPending || isConfirming || isRunning}
-          className={cn(
-            'flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-all',
-            isPending || isConfirming || isRunning
-              ? 'cursor-not-allowed bg-zinc-800 text-zinc-500'
-              : 'bg-blue-600 text-white hover:bg-blue-500'
-          )}
+          className="bg-accent text-accent-foreground hover:bg-accent/90"
         >
           {isPending || isConfirming ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -177,10 +232,10 @@ export function PipelineStatusPage({ orchestratorAddress }: PipelineStatusPagePr
             <Play className="h-4 w-4" />
           )}
           {isPending ? 'Confirming...' : isConfirming ? 'Waiting...' : 'Trigger Pipeline'}
-        </button>
+        </Button>
 
         {triggerError && (
-          <span className="flex items-center gap-1.5 text-xs text-red-400">
+          <span className="flex items-center gap-1.5 text-xs text-destructive">
             <AlertTriangle className="h-3.5 w-3.5" />
             {triggerError}
           </span>
@@ -192,9 +247,9 @@ export function PipelineStatusPage({ orchestratorAddress }: PipelineStatusPagePr
 
 function DataCard({ label, value, isText }: { label: string; value: string; isText?: boolean }) {
   return (
-    <div className="rounded-lg border border-zinc-800/40 bg-zinc-900/50 p-3">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className={cn('mt-1 font-mono', isText ? 'text-xs text-zinc-300 line-clamp-3' : 'text-sm text-zinc-100')}>
+    <div className="rounded-lg border border-border bg-secondary p-3">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className={cn('mt-1 font-mono', isText ? 'line-clamp-3 text-xs text-foreground' : 'text-sm text-foreground')}>
         {value}
       </p>
     </div>

@@ -14,46 +14,46 @@ export function StageParse({ data }: StageParseProps) {
     <StageCard title="LLM Parse Website" stageNumber={2} icon={<FileText className="h-4 w-4" />}>
       <div className="space-y-4">
         <div>
-          <p className="mb-1 text-xs font-medium text-zinc-500">URL Scraped</p>
-          <code className="block rounded-lg bg-zinc-900 p-3 text-xs text-blue-400 break-all">{data.url}</code>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">URL Scraped</p>
+          <code className="block break-all rounded-lg bg-secondary p-3 text-xs text-accent">{data.url}</code>
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-medium text-zinc-500">Markdown Snippet</p>
-          <pre className="max-h-48 overflow-auto rounded-lg bg-zinc-900 p-3 text-xs text-zinc-300 whitespace-pre-wrap">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Markdown Snippet</p>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-secondary p-3 text-xs text-foreground">
             {data.markdownSnippet}
           </pre>
         </div>
 
         <div className="flex gap-6">
           <div>
-            <p className="mb-1 text-xs font-medium text-zinc-500">Confidence</p>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">Confidence</p>
             <div className="flex items-center gap-2">
-              <div className="h-2 w-24 rounded-full bg-zinc-800">
+              <div className="h-2 w-24 rounded-full bg-muted">
                 <div
                   className={cn(
                     'h-full rounded-full transition-all',
-                    data.confidence >= 0.8 ? 'bg-emerald-500' : data.confidence >= 0.5 ? 'bg-amber-500' : 'bg-red-500'
+                    data.confidence >= 0.8 ? 'bg-success' : data.confidence >= 0.5 ? 'bg-warning' : 'bg-destructive'
                   )}
                   style={{ width: `${data.confidence * 100}%` }}
                 />
               </div>
-              <span className="font-mono text-sm text-zinc-300">{(data.confidence * 100).toFixed(0)}%</span>
+              <span className="font-mono text-sm text-foreground">{(data.confidence * 100).toFixed(0)}%</span>
             </div>
           </div>
 
           <div>
-            <p className="mb-1 text-xs font-medium text-zinc-500">Answerable</p>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">Answerable</p>
             <div className="flex items-center gap-1.5">
               {data.answerable ? (
                 <>
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                  <span className="text-sm text-emerald-400">Yes</span>
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                  <span className="text-sm text-success">Yes</span>
                 </>
               ) : (
                 <>
-                  <XCircle className="h-4 w-4 text-red-400" />
-                  <span className="text-sm text-red-400">No</span>
+                  <XCircle className="h-4 w-4 text-destructive" />
+                  <span className="text-sm text-destructive">No</span>
                 </>
               )}
             </div>

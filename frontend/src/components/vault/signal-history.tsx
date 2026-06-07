@@ -2,9 +2,18 @@
 
 import Link from 'next/link'
 import { FileSearch } from 'lucide-react'
-import { cn, directionLabel, directionColor, formatPrice, timeAgo } from '@/lib/utils'
+import { formatPrice, timeAgo } from '@/lib/utils'
 import { SignalIndicator } from '@/components/leaderboard/signal-indicator'
 import type { Signal } from '@/types/vault'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 interface SignalHistoryProps {
   signals: Signal[]
@@ -14,70 +23,65 @@ interface SignalHistoryProps {
 export function SignalHistory({ signals, vaultAddress }: SignalHistoryProps) {
   if (signals.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-8 text-center backdrop-blur-sm">
-        <p className="text-zinc-500">No signals recorded yet</p>
-      </div>
+      <Card>
+        <CardContent className="p-8 text-center">
+          <p className="text-muted-foreground">No signals recorded yet</p>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 backdrop-blur-sm">
-      <div className="border-b border-zinc-800/50 px-6 py-4">
-        <h2 className="text-sm font-medium uppercase tracking-wider text-zinc-500">Signal History</h2>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-zinc-800/30 text-xs text-zinc-500">
-              <th className="px-6 py-3 text-left font-medium">Epoch</th>
-              <th className="px-6 py-3 text-left font-medium">Direction</th>
-              <th className="px-6 py-3 text-right font-medium">Size</th>
-              <th className="px-6 py-3 text-right font-medium">Stop Price</th>
-              <th className="px-6 py-3 text-right font-medium">Time</th>
-              <th className="px-6 py-3 text-center font-medium">Audit</th>
-            </tr>
-          </thead>
-          <tbody>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Signal History</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Epoch</TableHead>
+              <TableHead>Direction</TableHead>
+              <TableHead className="text-right">Size</TableHead>
+              <TableHead className="text-right">Stop Price</TableHead>
+              <TableHead className="text-right">Time</TableHead>
+              <TableHead className="text-center">Audit</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {signals.map((sig, i) => (
-              <tr
-                key={`${sig.epoch}-${i}`}
-                className={cn(
-                  'border-b border-zinc-800/20 transition-colors hover:bg-zinc-800/20',
-                  i % 2 === 0 ? 'bg-transparent' : 'bg-zinc-900/20'
-                )}
-              >
-                <td className="px-6 py-3 font-mono text-sm text-zinc-300">#{sig.epoch}</td>
-                <td className="px-6 py-3">
+              <TableRow key={`${sig.epoch}-${i}`}>
+                <TableCell className="font-mono text-sm">#{sig.epoch}</TableCell>
+                <TableCell>
                   <SignalIndicator direction={sig.direction} size="sm" pulse={false} />
-                </td>
-                <td className="px-6 py-3 text-right font-mono text-sm text-zinc-300">
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
                   {(sig.sizeBps / 100).toFixed(1)}%
-                </td>
-                <td className="px-6 py-3 text-right font-mono text-sm text-zinc-300">
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
                   ${formatPrice(sig.stopPrice)}
-                </td>
-                <td className="px-6 py-3 text-right text-sm text-zinc-500">
+                </TableCell>
+                <TableCell className="text-right text-sm text-muted-foreground">
                   {sig.timestamp ? timeAgo(sig.timestamp) : '—'}
-                </td>
-                <td className="px-6 py-3 text-center">
+                </TableCell>
+                <TableCell className="text-center">
                   {sig.reasoningHash && sig.reasoningHash !== '0x0000000000000000000000000000000000000000000000000000000000000000' ? (
                     <Link
                       href={`/vault/${vaultAddress}/audit/${sig.reasoningHash}`}
-                      className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors"
                     >
                       <FileSearch className="h-3.5 w-3.5" />
                       View
                     </Link>
                   ) : (
-                    <span className="text-xs text-zinc-600">—</span>
+                    <span className="text-xs text-muted-foreground">—</span>
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   )
 }

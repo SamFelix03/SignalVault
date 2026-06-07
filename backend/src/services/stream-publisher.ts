@@ -34,13 +34,16 @@ class StreamPublisher {
 
     try {
       const walletClient = getWalletClient();
-      this.streamsSDK = new StreamsSDK({ public: publicClient, wallet: walletClient });
+      // Somnia SDK types are pinned to a specific viem release; cast avoids duplicate-viem type clashes in workspaces.
+      const streamsClient = { public: publicClient, wallet: walletClient } as ConstructorParameters<typeof StreamsSDK>[0];
+      this.streamsSDK = new StreamsSDK(streamsClient);
 
       const wsPublicClient = createPublicClient({
         chain: somniaTestnet,
         transport: webSocket(WS_RPC_URL),
       });
-      this.reactivitySDK = new ReactivitySDK({ public: wsPublicClient });
+      const reactivityClient = { public: wsPublicClient } as ConstructorParameters<typeof ReactivitySDK>[0];
+      this.reactivitySDK = new ReactivitySDK(reactivityClient);
 
       await this.initSchemaIds();
       await this.subscribeToEvents();

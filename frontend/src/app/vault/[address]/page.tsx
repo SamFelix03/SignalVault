@@ -3,6 +3,7 @@
 import { use, useState, useEffect } from 'react'
 import { type Address } from 'viem'
 import { useReadContract } from 'wagmi'
+import Link from 'next/link'
 import { useVaultSignal } from '@/hooks/use-vault-signal'
 import { useVaultPnl } from '@/hooks/use-vault-pnl'
 import { useSignalHistory } from '@/hooks/use-signal-history'
@@ -11,6 +12,8 @@ import { useFollowerPosition } from '@/hooks/use-follower-positions'
 import { vaultConfig, API_URL } from '@/lib/contracts'
 import { VaultFactoryABI } from '@/abis/VaultFactory'
 import { VAULT_FACTORY_ADDRESS } from '@/lib/constants'
+import { isMockMode } from '@/lib/mock-mode'
+import { getMockVault, getMockVaultMeta, getMockStats } from '@/lib/mock-data'
 import { SignalDisplay } from '@/components/vault/signal-display'
 import { SignalHistory } from '@/components/vault/signal-history'
 import { PnlChart } from '@/components/vault/pnl-chart'
@@ -21,15 +24,25 @@ import { PipelineStatusPage } from '@/components/pipeline/pipeline-status'
 import { Leaderboard } from '@/components/vault/leaderboard'
 import { AddressBadge } from '@/components/common/address-badge'
 import { LoadingSpinner } from '@/components/common/loading-spinner'
-import { cn } from '@/lib/utils'
+import { usePageHeader } from '@/components/layout/page-header-context'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 import type { VaultStats } from '@/types/vault'
-
-type Tab = 'overview' | 'pipeline' | 'leaderboard'
 
 export default function VaultDetailPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = use(params)
   const vaultAddress = address as Address
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const { setTitle } = usePageHeader()
+  const mockMeta = isMockMode() ? getMockVaultMeta(address) : undefined
+  const mockVault = isMockMode() ? getMockVault(address) : undefined
   const { signal, isLoading: signalLoading } = useVaultSignal(vaultAddress)
   const [pnlRange, setPnlRange] = useState<'1d' | '7d' | '30d'>('7d')
   const { chartData } = useVaultPnl(address, pnlRange)
@@ -40,24 +53,37 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
   const { data: strategyPrompt } = useReadContract({
     ...vaultConfig(vaultAddress),
     functionName: 'strategyPrompt',
+    query: { enabled: !isMockMode() },
   })
 
-  const vaultName = strategyPrompt ? (strategyPrompt as string).slice(0, 50) + '...' : 'Strategy Vault'
+  const vaultName = isMockMode()
+    ? (mockVault?.name ?? 'Mock Vault')
+    : strategyPrompt
+      ? (strategyPrompt as string).slice(0, 50) + '...'
+      : 'Strategy Vault'
+
+  useEffect(() => {
+    setTitle(vaultName as string)
+    return () => setTitle(null)
+  }, [vaultName, setTitle])
 
   const { data: strategist } = useReadContract({
     ...vaultConfig(vaultAddress),
     functionName: 'strategist',
+    query: { enabled: !isMockMode() },
   })
 
   const { data: orchestratorAddr } = useReadContract({
     ...vaultConfig(vaultAddress),
     functionName: 'orchestrator',
+    query: { enabled: !isMockMode() },
   })
 
   const { data: deploymentCount } = useReadContract({
     address: VAULT_FACTORY_ADDRESS,
     abi: VaultFactoryABI,
     functionName: 'getDeploymentCount',
+    query: { enabled: !isMockMode() },
   })
 
   const [deploymentId, setDeploymentId] = useState<bigint | undefined>(undefined)
@@ -80,7 +106,7 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
     abi: VaultFactoryABI,
     functionName: 'getDeployment',
     args: deploymentId !== undefined ? [deploymentId] : undefined,
-    query: { enabled: deploymentId !== undefined },
+    query: { enabled: !isMockMode() && deploymentId !== undefined },
   })
 
   useEffect(() => {
@@ -91,105 +117,114 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
     }
   }, [deploymentData, vaultAddress])
 
-  const [stats, setStats] = useState<VaultStats>({
-    totalPnl: 0, sharpeRatio: 0, winRate: 0, maxDrawdown: 0, tradeCount: 0, followerCount: 0,
-  })
+  const [stats, setStats] = useState<VaultStats>(
+    isMockMode()
+      ? getMockStats(address)
+      : { totalPnl: 0, sharpeRatio: 0, winRate: 0, maxDrawdown: 0, tradeCount: 0, followerCount: 0 }
+  )
 
   useEffect(() => {
+    if (isMockMode()) {
+      setStats(getMockStats(address))
+      return
+    }
+
     fetch(`${API_URL}/api/vaults/${address}/stats`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setStats(d) })
       .catch(() => {})
   }, [address])
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'pipeline', label: 'Pipeline' },
-    { id: 'leaderboard', label: 'Leaderboard' },
-  ]
+  const resolvedStrategist = isMockMode() ? mockMeta?.strategist : strategist
+  const resolvedOrchestrator = isMockMode() ? mockMeta?.orchestrator : orchestratorAddr
+  const resolvedLedger = isMockMode() ? mockMeta?.performanceLedger : performanceLedgerAddr
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-100">
-          {(vaultName as string) || 'Loading Vault...'}
-        </h1>
-        <div className="mt-2 flex items-center gap-3">
-          <AddressBadge address={address} />
-          {strategist && (
-            <span className="text-xs text-zinc-500">
-              by <AddressBadge address={strategist as string} />
-            </span>
-          )}
-        </div>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/">Leaderboard</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage className="max-w-[200px] truncate">{vaultName as string}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <AddressBadge address={address} />
+        {resolvedStrategist && (
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            by <AddressBadge address={resolvedStrategist as string} />
+          </span>
+        )}
       </div>
 
-      <div className="flex gap-1 rounded-lg border border-zinc-800/60 bg-zinc-900/50 p-1">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              'rounded-md px-4 py-2 text-sm font-medium transition-all',
-              activeTab === tab.id
-                ? 'bg-zinc-800 text-zinc-100 shadow-sm'
-                : 'text-zinc-500 hover:text-zinc-300'
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
+          <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
+        </TabsList>
 
-      {activeTab === 'overview' && (
-        <>
-          <PipelineStatus currentStage={stage} isRunning={isRunning} />
-
-          {signalLoading ? (
-            <LoadingSpinner size="lg" className="py-12" />
-          ) : signal ? (
-            <SignalDisplay signal={signal} />
-          ) : (
-            <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-8 text-center backdrop-blur-sm">
-              <p className="text-zinc-500">No active signal</p>
-            </div>
-          )}
-
-          <VaultStatsPanel stats={stats} />
-
+        <TabsContent value="overview" className="mt-6 space-y-6">
           <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+            <div className="space-y-6 lg:col-span-2">
+              {signalLoading ? (
+                <LoadingSpinner size="lg" className="py-12" />
+              ) : signal ? (
+                <SignalDisplay signal={signal} />
+              ) : (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-muted-foreground">No active signal</p>
+                  </CardContent>
+                </Card>
+              )}
+
               <PnlChart data={chartData} onRangeChange={setPnlRange} />
+              <SignalHistory signals={signals} vaultAddress={address} />
             </div>
-            <SubscribeForm
-              vaultAddress={vaultAddress}
-              isSubscribed={position?.active ?? false}
-            />
-          </div>
 
-          <SignalHistory signals={signals} vaultAddress={address} />
-        </>
-      )}
-
-      {activeTab === 'pipeline' && (
-        orchestratorAddr ? (
-          <PipelineStatusPage orchestratorAddress={orchestratorAddr as Address} />
-        ) : (
-          <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-8 text-center backdrop-blur-sm">
-            <p className="text-zinc-500">Loading orchestrator address...</p>
+            <div className="space-y-6">
+              <PipelineStatus currentStage={stage} isRunning={isRunning} />
+              <VaultStatsPanel stats={stats} />
+              <SubscribeForm
+                vaultAddress={vaultAddress}
+                isSubscribed={position?.active ?? false}
+              />
+            </div>
           </div>
-        )
-      )}
+        </TabsContent>
 
-      {activeTab === 'leaderboard' && (
-        performanceLedgerAddr ? (
-          <Leaderboard performanceLedgerAddress={performanceLedgerAddr} />
-        ) : (
-          <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-8 text-center backdrop-blur-sm">
-            <p className="text-zinc-500">Loading performance ledger...</p>
-          </div>
-        )
-      )}
+        <TabsContent value="pipeline" className="mt-6">
+          {resolvedOrchestrator ? (
+            <PipelineStatusPage orchestratorAddress={resolvedOrchestrator as Address} />
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <p className="text-muted-foreground">Loading orchestrator address...</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="leaderboard" className="mt-6">
+          {resolvedLedger ? (
+            <Leaderboard performanceLedgerAddress={resolvedLedger as Address} />
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <p className="text-muted-foreground">Loading performance ledger...</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

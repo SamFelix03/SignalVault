@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 
 interface LoadingSpinnerProps {
   size?: 'sm' | 'md' | 'lg'
@@ -15,9 +16,13 @@ export function LoadingSpinner({ size = 'md', className }: LoadingSpinnerProps) 
       <div
         className={cn(
           sizeMap[size],
-          'animate-spin rounded-full border-2 border-zinc-700 border-t-blue-500'
+          'animate-spin rounded-full border-2 border-muted border-t-accent'
         )}
       />
     </div>
   )
+}
+
+export function LoadingSkeleton({ className }: { className?: string }) {
+  return <Skeleton className={cn('h-32 w-full rounded-xl', className)} />
 }

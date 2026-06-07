@@ -9,11 +9,15 @@
   "scripts": {
     "dev:backend": "npm run dev --workspace=backend",
     "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:frontend:mock": "npm run dev:mock --workspace=frontend",
     "build:contracts": "cd contracts && forge build",
     "deploy:testnet": "cd contracts && forge script script/DeployAll.s.sol --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY",
     "test:contracts": "cd contracts && forge test -vvv"
   },
   "dependencies": {
     "@somnia-chain/reactivity": "^0.1.10"
+  },
+  "overrides": {
+    "viem": "~2.37.8"
   }
 }

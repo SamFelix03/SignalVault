@@ -3,15 +3,56 @@
 import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
 import { performanceLedgerAbi } from '@/abis/PerformanceLedger'
-import { cn } from '@/lib/utils'
-import { formatPrice, directionLabel, directionColor, timeAgo } from '@/lib/utils'
+import { isMockMode } from '@/lib/mock-mode'
+import { mockLedgerTrades } from '@/lib/mock-data'
+import { cn, formatPrice, directionLabel, directionColor, timeAgo } from '@/lib/utils'
 import { TrendingUp, TrendingDown, BarChart3 } from 'lucide-react'
+import { MetricCard } from '@/components/common/metric-card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 interface LeaderboardProps {
   performanceLedgerAddress: Address
 }
 
+function MockLeaderboard() {
+  const totalPnl = 12.4
+  const winRate = 64
+  const sharpe = 1.82
+  const maxDrawdownBps = 820
+  const trades = mockLedgerTrades
+
+  return (
+    <LeaderboardContent
+      totalPnl={totalPnl}
+      winRate={winRate}
+      sharpe={sharpe}
+      maxDrawdownBps={maxDrawdownBps}
+      totalTrades={trades.length}
+      trades={trades.map(t => ({
+        direction: t.direction,
+        entryPrice: t.entryPrice,
+        exitPrice: t.exitPrice,
+        pnl: Number(t.pnlBps) / 100,
+        timestamp: Number(t.settledAt),
+      }))}
+    />
+  )
+}
+
 export function Leaderboard({ performanceLedgerAddress }: LeaderboardProps) {
+  if (isMockMode()) return <MockLeaderboard />
+  return <LiveLeaderboard performanceLedgerAddress={performanceLedgerAddress} />
+}
+
+function LiveLeaderboard({ performanceLedgerAddress }: LeaderboardProps) {
   const { data: statsData } = useReadContract({
     address: performanceLedgerAddress,
     abi: performanceLedgerAbi,
@@ -57,110 +98,121 @@ export function Leaderboard({ performanceLedgerAddress }: LeaderboardProps) {
   }>) ?? []
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Total PnL"
-          value={`${totalPnl >= 0 ? '+' : ''}$${formatPrice(Math.abs(totalPnl))}`}
-          color={totalPnl >= 0 ? 'emerald' : 'red'}
-          icon={totalPnl >= 0 ? TrendingUp : TrendingDown}
-        />
-        <StatCard
-          label="Win Rate"
-          value={`${winRate.toFixed(1)}%`}
-          color={winRate >= 50 ? 'emerald' : 'amber'}
-          icon={BarChart3}
-        />
-        <StatCard
-          label="Sharpe Ratio"
-          value={sharpe.toFixed(2)}
-          color={sharpe >= 1 ? 'emerald' : sharpe >= 0 ? 'amber' : 'red'}
-          icon={TrendingUp}
-        />
-        <StatCard
-          label="Max Drawdown"
-          value={`${(maxDrawdownBps / 100).toFixed(2)}%`}
-          color="red"
-          icon={TrendingDown}
-        />
-      </div>
-
-      <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-6 backdrop-blur-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-medium uppercase tracking-wider text-zinc-500">Trade History</h3>
-          <span className="text-xs text-zinc-500">{totalTrades} total trades</span>
-        </div>
-
-        {trades.length === 0 ? (
-          <p className="py-8 text-center text-sm text-zinc-500">No trades recorded yet</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800/60 text-xs text-zinc-500">
-                  <th className="pb-3 pr-4 font-medium">Direction</th>
-                  <th className="pb-3 pr-4 font-medium">Entry</th>
-                  <th className="pb-3 pr-4 font-medium">Exit</th>
-                  <th className="pb-3 pr-4 font-medium">PnL</th>
-                  <th className="pb-3 font-medium">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/40">
-                {trades.map((trade, i) => {
-                  const pnl = Number(trade.pnl) / 1e18
-                  return (
-                    <tr key={i} className="text-zinc-300">
-                      <td className={cn('py-3 pr-4 font-medium', directionColor(trade.direction))}>
-                        {directionLabel(trade.direction)}
-                      </td>
-                      <td className="py-3 pr-4 font-mono text-xs">
-                        ${formatPrice(trade.entryPrice)}
-                      </td>
-                      <td className="py-3 pr-4 font-mono text-xs">
-                        ${formatPrice(trade.exitPrice)}
-                      </td>
-                      <td className={cn('py-3 pr-4 font-mono text-xs', pnl >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-                        {pnl >= 0 ? '+' : ''}{pnl.toFixed(4)}
-                      </td>
-                      <td className="py-3 text-xs text-zinc-500">
-                        {trade.timestamp > BigInt(0) ? timeAgo(Number(trade.timestamp)) : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
+    <LeaderboardContent
+      totalPnl={totalPnl}
+      winRate={winRate}
+      sharpe={sharpe}
+      maxDrawdownBps={maxDrawdownBps}
+      totalTrades={totalTrades}
+      trades={trades.map(t => ({
+        direction: t.direction,
+        entryPrice: t.entryPrice,
+        exitPrice: t.exitPrice,
+        pnl: Number(t.pnl) / 1e18,
+        timestamp: Number(t.timestamp),
+      }))}
+    />
   )
 }
 
-function StatCard({
-  label,
-  value,
-  color,
-  icon: Icon,
+function LeaderboardContent({
+  totalPnl,
+  winRate,
+  sharpe,
+  maxDrawdownBps,
+  totalTrades,
+  trades,
 }: {
-  label: string
-  value: string
-  color: 'emerald' | 'red' | 'amber'
-  icon: React.ComponentType<{ className?: string }>
+  totalPnl: number
+  winRate: number
+  sharpe: number
+  maxDrawdownBps: number
+  totalTrades: number
+  trades: Array<{
+    direction: number
+    entryPrice: bigint | number
+    exitPrice: bigint | number
+    pnl: number
+    timestamp: number
+  }>
 }) {
-  const colorClasses = {
-    emerald: 'border-emerald-500/30 text-emerald-400',
-    red: 'border-red-500/30 text-red-400',
-    amber: 'border-amber-500/30 text-amber-400',
-  }
-
   return (
-    <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-4 backdrop-blur-sm">
-      <div className="flex items-center gap-2">
-        <Icon className={cn('h-4 w-4', colorClasses[color])} />
-        <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{label}</p>
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard
+          title="Total PnL"
+          value={`${totalPnl >= 0 ? '+' : ''}$${formatPrice(Math.abs(totalPnl))}`}
+          changeType={totalPnl >= 0 ? 'positive' : 'negative'}
+          icon={totalPnl >= 0 ? TrendingUp : TrendingDown}
+          delay={0}
+        />
+        <MetricCard
+          title="Win Rate"
+          value={`${winRate.toFixed(1)}%`}
+          changeType={winRate >= 50 ? 'positive' : 'neutral'}
+          icon={BarChart3}
+          delay={1}
+        />
+        <MetricCard
+          title="Sharpe Ratio"
+          value={sharpe.toFixed(2)}
+          changeType={sharpe >= 1 ? 'positive' : sharpe >= 0 ? 'neutral' : 'negative'}
+          icon={TrendingUp}
+          delay={2}
+        />
+        <MetricCard
+          title="Max Drawdown"
+          value={`${(maxDrawdownBps / 100).toFixed(2)}%`}
+          changeType="negative"
+          icon={TrendingDown}
+          delay={3}
+        />
       </div>
-      <p className={cn('mt-2 text-xl font-bold', colorClasses[color])}>{value}</p>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-base">Trade History</CardTitle>
+          <span className="text-xs text-muted-foreground">{totalTrades} total trades</span>
+        </CardHeader>
+        <CardContent className="p-0">
+          {trades.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No trades recorded yet</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Direction</TableHead>
+                  <TableHead className="text-right">Entry</TableHead>
+                  <TableHead className="text-right">Exit</TableHead>
+                  <TableHead className="text-right">PnL</TableHead>
+                  <TableHead className="text-right">Time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {trades.map((trade, i) => (
+                  <TableRow key={i}>
+                    <TableCell className={cn('font-medium', directionColor(trade.direction))}>
+                      {directionLabel(trade.direction)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs">
+                      ${formatPrice(trade.entryPrice)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs">
+                      ${formatPrice(trade.exitPrice)}
+                    </TableCell>
+                    <TableCell className={cn('text-right font-mono text-xs', trade.pnl >= 0 ? 'text-success' : 'text-destructive')}>
+                      {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(4)}
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">
+                      {trade.timestamp > 0 ? timeAgo(trade.timestamp) : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

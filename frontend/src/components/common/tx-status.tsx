@@ -1,7 +1,15 @@
 'use client'
 
 import { CheckCircle, XCircle, Loader2, ExternalLink } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 type TxState = 'idle' | 'pending' | 'confirming' | 'success' | 'error'
 
@@ -13,62 +21,62 @@ interface TxStatusProps {
 }
 
 export function TxStatus({ state, hash, error, onClose }: TxStatusProps) {
-  if (state === 'idle') return null
-
+  const open = state !== 'idle'
   const explorerUrl = hash ? `https://shannon-explorer.somnia.network/tx/${hash}` : undefined
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-[#111118] p-6 shadow-2xl">
-        <div className="flex flex-col items-center gap-4 text-center">
+    <Dialog open={open} onOpenChange={open => !open && onClose?.()}>
+      <DialogContent showCloseButton={state === 'success' || state === 'error'} className="sm:max-w-sm">
+        <DialogHeader className="items-center text-center">
           {(state === 'pending' || state === 'confirming') && (
             <>
-              <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
-              <p className="text-lg font-medium text-zinc-200">
+              <Loader2 className="h-12 w-12 animate-spin text-accent" />
+              <DialogTitle>
                 {state === 'pending' ? 'Confirm in Wallet' : 'Confirming Transaction...'}
-              </p>
-              <p className="text-sm text-zinc-500">
-                {state === 'pending' ? 'Please confirm the transaction in your wallet' : 'Waiting for on-chain confirmation'}
-              </p>
+              </DialogTitle>
+              <DialogDescription>
+                {state === 'pending'
+                  ? 'Please confirm the transaction in your wallet'
+                  : 'Waiting for on-chain confirmation'}
+              </DialogDescription>
             </>
           )}
 
           {state === 'success' && (
             <>
-              <CheckCircle className="h-12 w-12 text-emerald-500" />
-              <p className="text-lg font-medium text-zinc-200">Transaction Confirmed</p>
+              <CheckCircle className="h-12 w-12 text-success" />
+              <DialogTitle>Transaction Confirmed</DialogTitle>
             </>
           )}
 
           {state === 'error' && (
             <>
-              <XCircle className="h-12 w-12 text-red-500" />
-              <p className="text-lg font-medium text-zinc-200">Transaction Failed</p>
-              {error && <p className="text-sm text-red-400">{error}</p>}
+              <XCircle className="h-12 w-12 text-destructive" />
+              <DialogTitle>Transaction Failed</DialogTitle>
+              {error && <DialogDescription className="text-destructive">{error}</DialogDescription>}
             </>
           )}
+        </DialogHeader>
 
-          {explorerUrl && (
-            <a
-              href={explorerUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn('inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300')}
-            >
-              View on Explorer <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          )}
+        {explorerUrl && (
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-1.5 text-sm text-accent hover:text-accent/80"
+          >
+            View on Explorer <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        )}
 
-          {(state === 'success' || state === 'error') && onClose && (
-            <button
-              onClick={onClose}
-              className="mt-2 rounded-lg bg-zinc-800 px-6 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700"
-            >
+        {(state === 'success' || state === 'error') && onClose && (
+          <DialogFooter className="sm:justify-center">
+            <Button variant="secondary" onClick={onClose}>
               Close
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

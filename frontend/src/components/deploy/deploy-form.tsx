@@ -1,12 +1,52 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ComponentType, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi'
 import { parseEther } from 'viem'
+import { Bot, Gauge, Percent, Wallet, Sparkles } from 'lucide-react'
 import { vaultFactoryConfig } from '@/lib/contracts'
 import { TxStatus } from '@/components/common/tx-status'
 import { PromptPreview } from './prompt-preview'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Slider } from '@/components/ui/slider'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+
+function FormSection({
+  step,
+  title,
+  description,
+  icon: Icon,
+  children,
+}: {
+  step: number
+  title: string
+  description: string
+  icon: ComponentType<{ className?: string }>
+  children: ReactNode
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-sm font-bold text-accent">
+          {step}
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <Icon className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <div className="pl-11">{children}</div>
+    </div>
+  )
+}
 
 export function DeployForm() {
   const router = useRouter()
@@ -30,6 +70,7 @@ export function DeployForm() {
   }
 
   const txState = isPending ? 'pending' : isConfirming ? 'confirming' : isSuccess ? 'success' : writeError ? 'error' : 'idle'
+  const progress = strategyPrompt ? (feeBps > 0 ? (deposit ? 100 : 66) : 33) : 0
 
   function handleClose() {
     reset()
@@ -40,97 +81,122 @@ export function DeployForm() {
 
   if (!address) {
     return (
-      <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-12 text-center backdrop-blur-sm">
-        <p className="text-lg text-zinc-400">Connect your wallet to deploy a vault</p>
-      </div>
+      <Card className="overflow-hidden">
+        <div className="pointer-events-none h-1 bg-gradient-to-r from-accent via-chart-1 to-accent/50" />
+        <CardContent className="flex flex-col items-center px-6 py-16 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10">
+            <Wallet className="h-8 w-8 text-accent" />
+          </div>
+          <h3 className="text-lg font-semibold text-foreground">Connect to Deploy</h3>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+            Link your wallet to deploy an autonomous strategy vault on Somnia testnet.
+          </p>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="space-y-6">
-        <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-6 backdrop-blur-sm">
-          <h2 className="mb-6 text-sm font-medium uppercase tracking-wider text-zinc-500">Vault Configuration</h2>
-
-          <div className="space-y-5">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Strategy Prompt</label>
-              <textarea
+    <div className="grid gap-6 xl:grid-cols-5">
+      <div className="space-y-6 xl:col-span-3">
+        <Card className="overflow-hidden">
+          <div className="h-1 bg-secondary">
+            <div
+              className="h-full bg-gradient-to-r from-accent to-chart-1 transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <CardHeader>
+            <CardTitle className="text-base">Vault Configuration</CardTitle>
+            <CardDescription>Define how your agent trades and manages risk</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-8">
+            <FormSection
+              step={1}
+              title="Strategy Prompt"
+              description="The agent reads this every epoch to decide trades"
+              icon={Bot}
+            >
+              <Textarea
+                id="strategy"
                 value={strategyPrompt}
                 onChange={e => setStrategyPrompt(e.target.value)}
                 rows={6}
-                placeholder="Describe your trading strategy. The AI agent will follow these instructions to generate trading signals autonomously..."
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 resize-none"
+                placeholder="e.g. Momentum breakout on BTC/USDC. Max 20% drawdown. Exit if funding rate exceeds 0.1%. Reduce size when Fear & Greed below 30..."
+                className="resize-none border-border/80 bg-secondary/30 focus:bg-background"
               />
-            </div>
+            </FormSection>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-400">
-                Performance Fee: <span className="font-mono text-zinc-300">{(feeBps / 100).toFixed(1)}%</span>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={2000}
-                step={50}
-                value={feeBps}
-                onChange={e => setFeeBps(Number(e.target.value))}
-                className="w-full accent-blue-500"
-              />
-              <div className="mt-1 flex justify-between text-[10px] text-zinc-600">
-                <span>0%</span>
-                <span>20%</span>
+            <Separator />
+
+            <FormSection
+              step={2}
+              title="Risk Parameters"
+              description="Performance fee and drawdown guard thresholds"
+              icon={Percent}
+            >
+              <div className="space-y-6">
+                <div className="space-y-3 rounded-lg border border-border/60 bg-secondary/20 p-4">
+                  <Label className="flex justify-between">
+                    <span>Performance Fee</span>
+                    <span className="font-mono text-accent">{(feeBps / 100).toFixed(1)}%</span>
+                  </Label>
+                  <Slider min={0} max={2000} step={50} value={[feeBps]} onValueChange={v => setFeeBps(v[0])} />
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>0%</span>
+                    <span>20%</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-lg border border-border/60 bg-secondary/20 p-4">
+                  <Label className="flex justify-between">
+                    <span>Max Drawdown</span>
+                    <span className="font-mono text-destructive">{(maxDrawdownBps / 100).toFixed(0)}%</span>
+                  </Label>
+                  <Slider min={500} max={5000} step={100} value={[maxDrawdownBps]} onValueChange={v => setMaxDrawdownBps(v[0])} />
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>5%</span>
+                    <span>50%</span>
+                  </div>
+                </div>
               </div>
-            </div>
+            </FormSection>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-400">
-                Max Drawdown: <span className="font-mono text-zinc-300">{(maxDrawdownBps / 100).toFixed(0)}%</span>
-              </label>
-              <input
-                type="range"
-                min={500}
-                max={5000}
-                step={100}
-                value={maxDrawdownBps}
-                onChange={e => setMaxDrawdownBps(Number(e.target.value))}
-                className="w-full accent-red-500"
-              />
-              <div className="mt-1 flex justify-between text-[10px] text-zinc-600">
-                <span>5%</span>
-                <span>50%</span>
-              </div>
-            </div>
+            <Separator />
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Agent Funding (STT)</label>
-              <input
+            <FormSection
+              step={3}
+              title="Agent Funding"
+              description="STT deposit for the orchestrator pipeline"
+              icon={Gauge}
+            >
+              <Input
+                id="deposit"
                 type="number"
                 value={deposit}
                 onChange={e => setDeposit(e.target.value)}
                 step="0.1"
                 min="0"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2.5 font-mono text-sm text-zinc-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                className="max-w-xs font-mono"
               />
-              <p className="mt-1 text-[10px] text-zinc-600">Funds the AI agent pipeline (orchestrator + epoch cron)</p>
-            </div>
+            </FormSection>
 
-            <button
+            <Button
               onClick={handleDeploy}
               disabled={!strategyPrompt || isPending || isConfirming}
-              className="w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white transition-all hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+              size="lg"
+              className="w-full bg-accent text-accent-foreground hover:bg-accent/90 shadow-lg shadow-accent/10"
             >
-              {isPending ? 'Confirm in Wallet...' : isConfirming ? 'Deploying Vault (8 contracts)...' : 'Deploy Vault'}
-            </button>
-
-            <p className="text-center text-[11px] text-zinc-600">
-              Deploys StrategyVault, AgentOrchestrator, MirrorReactor, StopReactor, DrawdownGuard, EpochCron, PerformanceLedger, and FeeDistributor via EIP-1167 minimal clones in a single transaction.
-            </p>
-          </div>
-        </div>
+              <Sparkles className="h-4 w-4" />
+              {isPending ? 'Confirm in Wallet...' : isConfirming ? 'Deploying 8 Contracts...' : 'Deploy Vault'}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
 
-      <PromptPreview name={strategyPrompt.slice(0, 50)} description={strategyPrompt} />
+      <div className="space-y-4 xl:col-span-2 xl:sticky xl:top-24 xl:self-start">
+        <PromptPreview name={strategyPrompt.slice(0, 50)} description={strategyPrompt} />
+      </div>
 
       <TxStatus state={txState} hash={txHash} error={writeError?.message} onClose={handleClose} />
     </div>

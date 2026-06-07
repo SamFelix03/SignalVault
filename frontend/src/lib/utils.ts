@@ -21,15 +21,15 @@ export function directionLabel(direction: number): 'LONG' | 'SHORT' | 'FLAT' {
 }
 
 export function directionColor(direction: number): string {
-  if (direction === 1) return 'text-emerald-400'
-  if (direction === 2) return 'text-red-400'
-  return 'text-amber-400'
+  if (direction === 1) return 'text-success'
+  if (direction === 2) return 'text-destructive'
+  return 'text-warning'
 }
 
 export function directionBg(direction: number): string {
-  if (direction === 1) return 'bg-emerald-500/20 border-emerald-500/40'
-  if (direction === 2) return 'bg-red-500/20 border-red-500/40'
-  return 'bg-amber-500/20 border-amber-500/40'
+  if (direction === 1) return 'bg-success/10 border-success/30'
+  if (direction === 2) return 'bg-destructive/10 border-destructive/30'
+  return 'bg-warning/10 border-warning/30'
 }
 
 export function truncateAddress(address: string): string {

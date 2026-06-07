@@ -8,7 +8,8 @@ import '@rainbow-me/rainbowkit/styles.css'
 import { somniaTestnet } from '@/lib/chains'
 
 const config = createConfig({
-  chains: [somniaTestnet],
+  // Monorepo may hoist a second viem copy; chain object remains valid at runtime.
+  chains: [somniaTestnet] as never,
   transports: {
     [somniaTestnet.id]: http(somniaTestnet.rpcUrls.default.http[0]),
   },
@@ -30,7 +31,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
           theme={darkTheme({
-            accentColor: '#3b82f6',
+            accentColor: '#4ade80',
             accentColorForeground: 'white',
             borderRadius: 'medium',
             overlayBlur: 'small',

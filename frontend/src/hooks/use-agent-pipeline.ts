@@ -2,15 +2,28 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { API_URL } from '@/lib/contracts'
+import { isMockMode } from '@/lib/mock-mode'
+import { getMockPipeline } from '@/lib/mock-data'
 import { StageType, type StageTypeValue, type PipelineRun } from '@/types/pipeline'
 
 export function useAgentPipeline(vaultAddress: string) {
-  const [stage, setStage] = useState<StageTypeValue>(StageType.IDLE)
+  const mockRun = isMockMode() ? getMockPipeline(vaultAddress) : null
+  const [stage, setStage] = useState<StageTypeValue>(mockRun?.currentStage ?? StageType.IDLE)
   const [stageData, setStageData] = useState<Record<string, unknown>>({})
   const [isRunning, setIsRunning] = useState(false)
-  const [run, setRun] = useState<PipelineRun | null>(null)
+  const [run, setRun] = useState<PipelineRun | null>(mockRun)
 
   const fetchStatus = useCallback(async () => {
+    if (isMockMode()) {
+      const data = getMockPipeline(vaultAddress)
+      if (data) {
+        setRun(data)
+        setStage(data.currentStage)
+        setIsRunning(!data.completedAt)
+      }
+      return
+    }
+
     try {
       const res = await fetch(`${API_URL}/api/vaults/${vaultAddress}/pipeline`)
       if (!res.ok) return

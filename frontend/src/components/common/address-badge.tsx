@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { Copy, ExternalLink, Check } from 'lucide-react'
 import { cn, truncateAddress } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface AddressBadgeProps {
   address: string
@@ -23,18 +25,33 @@ export function AddressBadge({ address, className, showCopy = true, showExplorer
   const explorerUrl = `https://shannon-explorer.somnia.network/address/${address}`
 
   return (
-    <span className={cn('inline-flex items-center gap-1.5 rounded-md bg-zinc-800/80 px-2 py-1 font-mono text-xs text-zinc-400', className)}>
+    <Badge variant="secondary" className={cn('gap-1.5 font-mono text-xs', className)}>
       {truncateAddress(address)}
       {showCopy && (
-        <button onClick={handleCopy} className="hover:text-zinc-200 transition-colors" title="Copy address">
-          {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" onClick={handleCopy} className="transition-colors hover:text-foreground">
+              {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Copy address</TooltipContent>
+        </Tooltip>
       )}
       {showExplorer && (
-        <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="hover:text-zinc-200 transition-colors" title="View on explorer">
-          <ExternalLink className="h-3 w-3" />
-        </a>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </TooltipTrigger>
+          <TooltipContent>View on explorer</TooltipContent>
+        </Tooltip>
       )}
-    </span>
+    </Badge>
   )
 }

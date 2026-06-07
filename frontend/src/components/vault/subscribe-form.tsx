@@ -5,7 +5,11 @@ import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagm
 import { parseEther, type Address } from 'viem'
 import { vaultConfig } from '@/lib/contracts'
 import { TxStatus } from '@/components/common/tx-status'
-import { cn } from '@/lib/utils'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Slider } from '@/components/ui/slider'
+import { Button } from '@/components/ui/button'
 
 interface SubscribeFormProps {
   vaultAddress: Address
@@ -53,92 +57,84 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
 
   if (!address) {
     return (
-      <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-6 text-center backdrop-blur-sm">
-        <p className="text-zinc-400">Connect your wallet to subscribe</p>
-      </div>
+      <Card>
+        <CardContent className="p-6 text-center">
+          <p className="text-muted-foreground">Connect your wallet to subscribe</p>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-6 backdrop-blur-sm">
-      <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">
-        {isSubscribed ? 'Manage Subscription' : 'Subscribe to Signals'}
-      </h2>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {isSubscribed ? 'Manage Subscription' : 'Subscribe to Signals'}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {!isSubscribed ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>
+                Risk Level: <span className="font-mono text-foreground">{(riskBps / 100).toFixed(0)}%</span>
+              </Label>
+              <Slider min={100} max={10000} step={100} value={[riskBps]} onValueChange={v => setRiskBps(v[0])} />
+            </div>
 
-      {!isSubscribed ? (
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">
-              Risk Level: <span className="font-mono text-zinc-300">{(riskBps / 100).toFixed(0)}%</span>
-            </label>
-            <input
-              type="range"
-              min={100}
-              max={10000}
-              step={100}
-              value={riskBps}
-              onChange={e => setRiskBps(Number(e.target.value))}
-              className="w-full accent-blue-500"
-            />
+            <div className="space-y-2">
+              <Label htmlFor="maxPosition">Max Position (USD)</Label>
+              <Input
+                id="maxPosition"
+                type="number"
+                value={maxPositionUsd}
+                onChange={e => setMaxPositionUsd(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>
+                Max Slippage: <span className="font-mono text-foreground">{(maxSlippageBps / 100).toFixed(1)}%</span>
+              </Label>
+              <Slider min={10} max={500} step={10} value={[maxSlippageBps]} onValueChange={v => setMaxSlippageBps(v[0])} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="stopLoss">Stop Loss Buffer (USD)</Label>
+              <Input
+                id="stopLoss"
+                type="number"
+                value={stopLossBuffer}
+                onChange={e => setStopLossBuffer(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+
+            <Button
+              onClick={handleSubscribe}
+              disabled={isPending || isConfirming}
+              className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
+            >
+              Subscribe
+            </Button>
           </div>
-
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">Max Position (USD)</label>
-            <input
-              type="number"
-              value={maxPositionUsd}
-              onChange={e => setMaxPositionUsd(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-200 focus:border-blue-500 focus:outline-none"
-            />
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-success">You are currently subscribed to this vault.</p>
+            <Button
+              variant="destructive"
+              onClick={handleUnsubscribe}
+              disabled={isPending || isConfirming}
+              className="w-full"
+            >
+              Unsubscribe
+            </Button>
           </div>
+        )}
 
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">
-              Max Slippage: <span className="font-mono text-zinc-300">{(maxSlippageBps / 100).toFixed(1)}%</span>
-            </label>
-            <input
-              type="range"
-              min={10}
-              max={500}
-              step={10}
-              value={maxSlippageBps}
-              onChange={e => setMaxSlippageBps(Number(e.target.value))}
-              className="w-full accent-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">Stop Loss Buffer (USD)</label>
-            <input
-              type="number"
-              value={stopLossBuffer}
-              onChange={e => setStopLossBuffer(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-200 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <button
-            onClick={handleSubscribe}
-            disabled={isPending || isConfirming}
-            className="w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white transition-all hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/25 disabled:opacity-50"
-          >
-            Subscribe
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <p className="text-sm text-emerald-400">You are currently subscribed to this vault.</p>
-          <button
-            onClick={handleUnsubscribe}
-            disabled={isPending || isConfirming}
-            className="w-full rounded-lg border border-red-500/40 bg-red-500/10 py-3 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20 disabled:opacity-50"
-          >
-            Unsubscribe
-          </button>
-        </div>
-      )}
-
-      <TxStatus state={txState} hash={txHash} error={writeError?.message} onClose={handleClose} />
-    </div>
+        <TxStatus state={txState} hash={txHash} error={writeError?.message} onClose={handleClose} />
+      </CardContent>
+    </Card>
   )
 }

@@ -3,6 +3,8 @@
 import { cn } from '@/lib/utils'
 import { StageType, type StageTypeValue } from '@/types/pipeline'
 import { Circle, CheckCircle2, Loader2 } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
 
 interface PipelineStatusProps {
   currentStage: StageTypeValue
@@ -21,61 +23,59 @@ const stageOrder = Object.values(StageType)
 
 export function PipelineStatus({ currentStage, isRunning }: PipelineStatusProps) {
   const currentIdx = stageOrder.indexOf(currentStage)
+  const progress = (currentIdx / (stages.length - 1)) * 100
 
   return (
-    <div className="rounded-xl border border-zinc-800/60 bg-[#111118]/80 p-6 backdrop-blur-sm">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-medium uppercase tracking-wider text-zinc-500">Agent Pipeline</h2>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-base">Agent Pipeline</CardTitle>
         {isRunning && (
-          <span className="flex items-center gap-1.5 text-xs text-blue-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+          <span className="flex items-center gap-1.5 text-xs text-accent">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             Running
           </span>
         )}
-      </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Progress value={progress} className="h-1.5 [&>div]:bg-accent" />
 
-      <div className="relative flex items-center justify-between">
-        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-zinc-800" />
-        <div
-          className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 bg-blue-500 transition-all duration-700"
-          style={{ width: `${(currentIdx / (stages.length - 1)) * 100}%` }}
-        />
-
-        {stages.map(({ key, label }, i) => {
-          const isComplete = i < currentIdx
-          const isCurrent = i === currentIdx
-          return (
-            <div key={key} className="relative z-10 flex flex-col items-center gap-2">
-              <div
-                className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all',
-                  isComplete
-                    ? 'border-emerald-500 bg-emerald-500/20'
-                    : isCurrent && isRunning
-                      ? 'border-blue-500 bg-blue-500/20'
-                      : 'border-zinc-700 bg-zinc-900'
-                )}
-              >
-                {isComplete ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                ) : isCurrent && isRunning ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                ) : (
-                  <Circle className="h-4 w-4 text-zinc-600" />
-                )}
+        <div className="relative flex items-center justify-between">
+          {stages.map(({ key, label }, i) => {
+            const isComplete = i < currentIdx
+            const isCurrent = i === currentIdx
+            return (
+              <div key={key} className="relative z-10 flex flex-col items-center gap-2">
+                <div
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all',
+                    isComplete
+                      ? 'border-success bg-success/20'
+                      : isCurrent && isRunning
+                        ? 'border-accent bg-accent/20'
+                        : 'border-border bg-secondary'
+                  )}
+                >
+                  {isComplete ? (
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                  ) : isCurrent && isRunning ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                  ) : (
+                    <Circle className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+                <span
+                  className={cn(
+                    'whitespace-nowrap text-[10px] font-medium',
+                    isComplete ? 'text-success' : isCurrent ? 'text-accent' : 'text-muted-foreground'
+                  )}
+                >
+                  {label}
+                </span>
               </div>
-              <span
-                className={cn(
-                  'text-[10px] font-medium whitespace-nowrap',
-                  isComplete ? 'text-emerald-400' : isCurrent ? 'text-blue-400' : 'text-zinc-600'
-                )}
-              >
-                {label}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
   )
 }

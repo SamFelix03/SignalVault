@@ -2,14 +2,23 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { API_URL } from '@/lib/contracts'
+import { isMockMode } from '@/lib/mock-mode'
+import { mockVaults } from '@/lib/mock-data'
 import type { VaultInfo } from '@/types/vault'
 
 export function useVaultList() {
-  const [vaults, setVaults] = useState<VaultInfo[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [vaults, setVaults] = useState<VaultInfo[]>(isMockMode() ? mockVaults : [])
+  const [isLoading, setIsLoading] = useState(!isMockMode())
   const [error, setError] = useState<Error | null>(null)
 
   const fetchVaults = useCallback(async () => {
+    if (isMockMode()) {
+      setVaults(mockVaults)
+      setIsLoading(false)
+      setError(null)
+      return
+    }
+
     try {
       const res = await fetch(`${API_URL}/api/vaults`)
       if (!res.ok) throw new Error(`Failed to fetch vaults: ${res.statusText}`)

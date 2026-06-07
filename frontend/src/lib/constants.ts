@@ -28,7 +28,10 @@ export const DEMO_PERFORMANCE_LEDGER = '0xE913ae3029d9F9A7c6BC08d3814D464C97A061
 export const DEMO_FEE_DISTRIBUTOR = '0x4c5Bb18079F4676B58f35b40Df33576088eBD1c2' as Address
 
 // ── Backend API ─────────────────────────────────────────────────────
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
+// Set NEXT_PUBLIC_API_URL directly, or just NEXT_PUBLIC_BACKEND_PORT (defaults to 3001).
+const backendPort = process.env.NEXT_PUBLIC_BACKEND_PORT ?? '3001'
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${backendPort}`
 
 // ── Agent IDs ───────────────────────────────────────────────────────
 export const JSON_API_AGENT_ID = BigInt('13174292974160097713')

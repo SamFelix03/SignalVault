@@ -3,6 +3,7 @@
 import { useReadContract, useAccount } from 'wagmi'
 import { type Address } from 'viem'
 import { StrategyVaultABI } from '@/abis/StrategyVault'
+import { isMockMode } from '@/lib/mock-mode'
 import type { FollowerConfig } from '@/types/vault'
 
 export function useFollowerPosition(vaultAddress: Address) {
@@ -14,10 +15,26 @@ export function useFollowerPosition(vaultAddress: Address) {
     functionName: 'getFollowerConfig',
     args: address ? [address] : undefined,
     query: {
-      enabled: !!address,
+      enabled: !!address && !isMockMode(),
       refetchInterval: 15_000,
     },
   })
+
+  if (isMockMode()) {
+    return {
+      position: {
+        follower: address ?? '0x000000000000000000000000000000000000dEaD',
+        riskBps: 100,
+        maxPositionUsd: BigInt(5000) * BigInt(1e18),
+        maxSlippageBps: 100,
+        stopLossBuffer: BigInt(500) * BigInt(1e16),
+        active: true,
+      } satisfies FollowerConfig,
+      isLoading: false,
+      error: undefined,
+      refetch: async () => {},
+    }
+  }
 
   const position: FollowerConfig | undefined = data
     ? (() => {

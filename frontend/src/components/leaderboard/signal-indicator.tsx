@@ -1,8 +1,8 @@
 'use client'
 
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { directionLabel } from '@/lib/utils'
+import { cn, directionLabel } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 
 interface SignalIndicatorProps {
   direction: number
@@ -14,16 +14,10 @@ interface SignalIndicatorProps {
 export function SignalIndicator({ direction, size = 'md', showLabel = true, pulse = true }: SignalIndicatorProps) {
   const label = directionLabel(direction)
 
-  const colorMap = {
-    LONG: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
-    SHORT: 'bg-red-500/20 text-red-400 border-red-500/40',
-    FLAT: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
-  }
-
-  const glowMap = {
-    LONG: 'shadow-emerald-500/20',
-    SHORT: 'shadow-red-500/20',
-    FLAT: 'shadow-amber-500/20',
+  const variantMap = {
+    LONG: 'bg-success/10 text-success border-success/30 hover:bg-success/10',
+    SHORT: 'bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/10',
+    FLAT: 'bg-warning/10 text-warning border-warning/30 hover:bg-warning/10',
   }
 
   const sizeMap = {
@@ -37,17 +31,17 @@ export function SignalIndicator({ direction, size = 'md', showLabel = true, puls
   const Icon = label === 'LONG' ? ArrowUp : label === 'SHORT' ? ArrowDown : Minus
 
   return (
-    <span
+    <Badge
+      variant="outline"
       className={cn(
-        'inline-flex items-center rounded-md border font-semibold shadow-lg transition-all',
-        colorMap[label],
-        glowMap[label],
+        'inline-flex items-center font-semibold shadow-sm transition-all',
+        variantMap[label],
         sizeMap[size],
         pulse && direction !== 0 && 'animate-pulse'
       )}
     >
       <Icon className={iconSize[size]} />
       {showLabel && label}
-    </span>
+    </Badge>
   )
 }

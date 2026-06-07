@@ -11,7 +11,7 @@ import { logger } from '../utils/logger';
 dotenv.config();
 
 const CTX = 'Server';
-const PORT = parseInt(process.env.PORT || '3001', 10);
+const PORT = parseInt(process.env.BACKEND_PORT || process.env.PORT || '3001', 10);
 
 const app = express();
 
