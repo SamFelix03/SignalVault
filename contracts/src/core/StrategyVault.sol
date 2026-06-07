@@ -77,6 +77,10 @@ contract StrategyVault is IStrategyVault {
         drawdownGuard = _drawdownGuard;
     }
 
+    function setOrchestrator(address _orchestrator) external onlyOwner {
+        orchestrator = _orchestrator;
+    }
+
     function setPerformanceLedger(address _ledger) external onlyOwner {
         performanceLedger = _ledger;
     }

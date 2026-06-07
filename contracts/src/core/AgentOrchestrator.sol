@@ -42,10 +42,10 @@ contract AgentOrchestrator is IAgentRequesterHandler {
     mapping(uint256 => uint256) public requestToRun;
     mapping(uint256 => bool) public pendingRequests;
 
-    string public constant PRICE_URL = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT";
-    string public constant PRICE_SELECTOR = "price";
-    string public constant FUNDING_URL = "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=1";
-    string public constant FUNDING_SELECTOR = "0.fundingRate";
+    string public constant PRICE_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
+    string public constant PRICE_SELECTOR = "bitcoin.usd";
+    string public constant FUNDING_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true";
+    string public constant FUNDING_SELECTOR = "bitcoin.usd_24h_change";
 
     event PipelineStarted(uint256 indexed runId, uint256 timestamp);
     event StageCompleted(uint256 indexed runId, string stage, uint256 requestId);
