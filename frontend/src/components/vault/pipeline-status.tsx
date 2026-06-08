@@ -19,11 +19,18 @@ const stages = [
   { key: StageType.COMPLETE, label: 'Complete' },
 ] as const
 
-const stageOrder = Object.values(StageType)
+const stageOrder: StageTypeValue[] = [
+  StageType.IDLE,
+  StageType.FETCHING,
+  StageType.SCRAPING,
+  StageType.REASONING,
+  StageType.COMPLETE,
+]
 
 export function PipelineStatus({ currentStage, isRunning }: PipelineStatusProps) {
   const currentIdx = stageOrder.indexOf(currentStage)
-  const progress = (currentIdx / (stages.length - 1)) * 100
+  const isPipelineComplete = currentStage === StageType.COMPLETE
+  const progress = isPipelineComplete ? 100 : (currentIdx / (stages.length - 1)) * 100
 
   return (
     <Card>
@@ -41,8 +48,8 @@ export function PipelineStatus({ currentStage, isRunning }: PipelineStatusProps)
 
         <div className="relative flex items-center justify-between">
           {stages.map(({ key, label }, i) => {
-            const isComplete = i < currentIdx
-            const isCurrent = i === currentIdx
+            const isComplete = isPipelineComplete ? i <= currentIdx : i < currentIdx
+            const isCurrent = i === currentIdx && !isPipelineComplete
             return (
               <div key={key} className="relative z-10 flex flex-col items-center gap-2">
                 <div

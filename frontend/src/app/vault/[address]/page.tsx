@@ -47,6 +47,7 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
   const [pnlRange, setPnlRange] = useState<'1d' | '7d' | '30d'>('7d')
   const { chartData } = useVaultPnl(address, pnlRange)
   const { signals } = useSignalHistory(address)
+  const displaySignal = signal ?? signals[0]
   const { stage, isRunning } = useAgentPipeline(address)
   const { position } = useFollowerPosition(vaultAddress)
 
@@ -172,10 +173,10 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
         <TabsContent value="overview" className="mt-6 space-y-6">
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">
-              {signalLoading ? (
+              {signalLoading && !displaySignal ? (
                 <LoadingSpinner size="lg" className="py-12" />
-              ) : signal ? (
-                <SignalDisplay signal={signal} />
+              ) : displaySignal ? (
+                <SignalDisplay signal={displaySignal} />
               ) : (
                 <Card>
                   <CardContent className="p-8 text-center">
