@@ -43,7 +43,7 @@ export default function AuditPage({ params }: { params: Promise<{ address: strin
       return
     }
 
-    fetch(`${API_URL}/api/receipts/${hash}`)
+    fetch(`${API_URL}/api/receipts/${hash}?vault=${encodeURIComponent(address)}`)
       .then(r => {
         if (!r.ok) throw new Error(`Failed to fetch receipt: ${r.statusText}`)
         return r.json()

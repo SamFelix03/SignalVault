@@ -4,6 +4,20 @@ export const StrategyVaultABI = [
     name: 'currentSignal',
     inputs: [],
     outputs: [
+      { name: 'direction', type: 'int8' },
+      { name: 'sizeBps', type: 'uint16' },
+      { name: 'stopPrice', type: 'uint256' },
+      { name: 'epoch', type: 'uint256' },
+      { name: 'reasoningHash', type: 'bytes32' },
+      { name: 'reasoningSummary', type: 'string' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getCurrentSignal',
+    inputs: [],
+    outputs: [
       {
         name: '',
         type: 'tuple',

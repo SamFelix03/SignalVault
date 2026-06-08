@@ -55,8 +55,13 @@ export function useSignalHistory(vaultAddress: string) {
           reasoningSummary: string
         }[]
 
+        const toSignedInt8 = (value: unknown) => {
+          const n = Number(value ?? 0)
+          return n > 127 ? n - 256 : n
+        }
+
         const mapped: Signal[] = raw.map(s => ({
-          direction: Number(s.direction),
+          direction: toSignedInt8(s.direction),
           sizeBps: Number(s.sizeBps),
           stopPrice: s.stopPrice,
           epoch: Number(s.epoch),

@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from 'express';
+import { getAddress, type Address } from 'viem';
 import { receiptStore, type Receipt } from '../../services/receipt-store';
+import { getOrBuildReceipt } from '../../services/receipt-builder';
 import { logger } from '../../utils/logger';
 
 const CTX = 'ReceiptRoutes';
@@ -32,10 +34,10 @@ function toAgentReceipt(receipt: Receipt) {
 
   return {
     hash: receipt.hash,
-    vaultAddress: '',
+    vaultAddress: receipt.vaultAddress ?? '',
     epoch: receipt.epoch,
     blockNumber: receipt.blockNumber,
-    txHash: '',
+    txHash: receipt.txHash ?? '',
     stages: {
       jsonApi: priceStage ? {
         url: priceStage.url,
@@ -63,10 +65,16 @@ function toAgentReceipt(receipt: Receipt) {
   };
 }
 
-receiptRouter.get('/:hash', (req: Request, res: Response) => {
+receiptRouter.get('/:hash', async (req: Request, res: Response) => {
   try {
     const hash = req.params.hash as string;
-    const receipt = receiptStore.get(hash);
+    const vaultParam = typeof req.query.vault === 'string' ? req.query.vault : undefined;
+    const vaultAddress = vaultParam ? (getAddress(vaultParam) as Address) : undefined;
+
+    let receipt = receiptStore.get(hash);
+    if (!receipt) {
+      receipt = (await getOrBuildReceipt(hash, vaultAddress)) ?? undefined;
+    }
 
     if (!receipt) {
       res.status(404).json({ error: 'Receipt not found' });

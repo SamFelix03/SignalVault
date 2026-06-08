@@ -9,6 +9,44 @@ import { logger } from '../../utils/logger';
 const CTX = 'VaultRoutes';
 export const vaultRouter = Router();
 
+type LedgerStats = {
+  totalPnl: bigint;
+  totalTrades: bigint;
+  winCount: bigint;
+  lossCount: bigint;
+  highWaterMark: bigint;
+  maxDrawdownBps: bigint;
+  currentDrawdownBps: bigint;
+  lastSettledEpoch: bigint;
+};
+
+function normalizeLedgerStats(statsResult: unknown): LedgerStats {
+  if (Array.isArray(statsResult)) {
+    const row = statsResult as readonly bigint[];
+    return {
+      totalPnl: row[0],
+      totalTrades: row[1],
+      winCount: row[2],
+      lossCount: row[3],
+      highWaterMark: row[4],
+      maxDrawdownBps: row[5],
+      currentDrawdownBps: row[6],
+      lastSettledEpoch: row[9],
+    };
+  }
+  const named = statsResult as LedgerStats;
+  return {
+    totalPnl: named.totalPnl,
+    totalTrades: named.totalTrades,
+    winCount: named.winCount,
+    lossCount: named.lossCount,
+    highWaterMark: named.highWaterMark,
+    maxDrawdownBps: named.maxDrawdownBps,
+    currentDrawdownBps: named.currentDrawdownBps,
+    lastSettledEpoch: named.lastSettledEpoch,
+  };
+}
+
 vaultRouter.get('/', (_req: Request, res: Response) => {
   try {
     const vaults = vaultIndexer.getAllVaults();
@@ -169,11 +207,9 @@ vaultRouter.get('/:address/leaderboard', async (req: Request, res: Response) => 
         address: ledgerAddress,
         abi: PerformanceLedgerABI,
         functionName: 'stats',
-      }) as Promise<{
-        totalPnl: bigint; totalTrades: bigint; winCount: bigint; lossCount: bigint;
-        highWaterMark: bigint; maxDrawdownBps: bigint; currentDrawdownBps: bigint;
-        sumReturns: bigint; sumSquaredReturns: bigint; lastSettledEpoch: bigint;
-      }>,
+      }) as Promise<
+        LedgerStats | readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint]
+      >,
       publicClient.readContract({
         address: ledgerAddress,
         abi: PerformanceLedgerABI,
@@ -203,18 +239,20 @@ vaultRouter.get('/:address/leaderboard', async (req: Request, res: Response) => 
       })) as any[];
     }
 
+    const stats = normalizeLedgerStats(statsResult);
+
     res.json({
       vault: address,
-      totalPnl: statsResult.totalPnl.toString(),
-      totalTrades: statsResult.totalTrades.toString(),
-      winCount: statsResult.winCount.toString(),
-      lossCount: statsResult.lossCount.toString(),
+      totalPnl: stats.totalPnl.toString(),
+      totalTrades: stats.totalTrades.toString(),
+      winCount: stats.winCount.toString(),
+      lossCount: stats.lossCount.toString(),
       winRate: winRate.toString(),
       sharpeApprox: sharpeApprox.toString(),
-      maxDrawdownBps: statsResult.maxDrawdownBps.toString(),
-      currentDrawdownBps: statsResult.currentDrawdownBps.toString(),
-      highWaterMark: statsResult.highWaterMark.toString(),
-      lastSettledEpoch: statsResult.lastSettledEpoch.toString(),
+      maxDrawdownBps: stats.maxDrawdownBps.toString(),
+      currentDrawdownBps: stats.currentDrawdownBps.toString(),
+      highWaterMark: stats.highWaterMark.toString(),
+      lastSettledEpoch: stats.lastSettledEpoch.toString(),
       tradeHistory: tradeHistory.map((t: any) => ({
         direction: Number(t.direction),
         entryPrice: t.entryPrice.toString(),

@@ -1,9 +1,15 @@
-import { type Address, type Log, keccak256, toBytes } from 'viem';
+import { type Address, type Log } from 'viem';
 import { publicClient } from '../config/chains';
 import { vaultIndexer } from './vault-indexer';
-import { receiptStore, type Receipt, type ReceiptStage } from './receipt-store';
+import {
+  backfillReceiptsForVault,
+  buildReceiptFromRun,
+  ruleBasedReasoningHash,
+} from './receipt-builder';
+import { receiptStore } from './receipt-store';
 import { AgentOrchestratorABI } from '../abis/AgentOrchestrator';
 import { logger } from '../utils/logger';
+import { keccak256, toBytes } from 'viem';
 
 const CTX = 'PipelineReceiptIndexer';
 
@@ -14,6 +20,7 @@ class PipelineReceiptIndexer {
   private lastBlock = 0n;
 
   async start(): Promise<void> {
+    await this.backfillAll();
     this.lastBlock = await publicClient.getBlockNumber();
     this.pollInterval = setInterval(() => this.poll().catch(() => {}), 12_000);
     logger.info(CTX, 'Pipeline receipt indexer started');
@@ -21,6 +28,16 @@ class PipelineReceiptIndexer {
 
   stop(): void {
     if (this.pollInterval) clearInterval(this.pollInterval);
+  }
+
+  private async backfillAll(): Promise<void> {
+    const vaults = vaultIndexer.getAllVaults();
+    for (const vault of vaults) {
+      const count = await backfillReceiptsForVault(vault.address);
+      if (count > 0) {
+        logger.info(CTX, `Backfilled ${count} receipt(s) for vault ${vault.address}`);
+      }
+    }
   }
 
   private async poll(): Promise<void> {
@@ -45,74 +62,26 @@ class PipelineReceiptIndexer {
 
   private async handleLog(vaultAddress: Address, orchestrator: Address, log: Log): Promise<void> {
     const topic0 = log.topics[0];
-    if (!topic0) return;
+    if (!topic0 || topic0 !== PIPELINE_COMPLETED) return;
 
-    if (topic0 === PIPELINE_COMPLETED) {
-      await this.buildReceipt(vaultAddress, orchestrator, log);
-    }
-  }
-
-  private async buildReceipt(vaultAddress: Address, orchestrator: Address, log: Log): Promise<void> {
     const runId = log.topics[1] ? BigInt(log.topics[1]) : 0n;
     if (runId === 0n) return;
 
-    const [price, funding, fearGreed, news] = await publicClient.readContract({
+    const [price, , fearGreed, news] = await publicClient.readContract({
       address: orchestrator,
       abi: AgentOrchestratorABI,
       functionName: 'getPipelineData',
       args: [runId],
     }) as [bigint, bigint, bigint, string];
 
-    const stages: ReceiptStage[] = [
-      {
-        stage: 'json_api_price',
-        type: 'oracle',
-        url: 'protofire BTC/USD oracle',
-        result: { price: price.toString() },
-        validators: [],
-        consensus: true,
-      },
-      {
-        stage: 'json_api_funding',
-        type: 'json_api',
-        url: 'coingecko 24h change',
-        result: { funding: funding.toString() },
-        validators: [],
-        consensus: true,
-      },
-      {
-        stage: 'fear_greed',
-        type: 'llm_parse',
-        url: 'alternative.me',
-        result: { fearGreedIndex: fearGreed.toString() },
-        validators: [],
-        consensus: true,
-      },
-      {
-        stage: 'news',
-        type: 'llm_parse',
-        url: 'coindesk.com',
-        result: { summary: news },
-        validators: [],
-        consensus: true,
-      },
-    ];
+    const reasoningHash = ruleBasedReasoningHash(price, fearGreed, news);
+    if (receiptStore.get(reasoningHash)) return;
 
-    const hash = keccak256(
-      toBytes(`${vaultAddress}-${runId}-${log.blockNumber}-${price}-${funding}-${news}`),
-    );
-
-    if (receiptStore.get(hash)) return;
-
-    const receipt: Receipt = {
-      hash,
-      epoch: Number(runId),
-      blockNumber: Number(log.blockNumber),
-      stages,
-    };
-
+    const receipt = await buildReceiptFromRun(vaultAddress, orchestrator, runId, reasoningHash);
+    receipt.txHash = log.transactionHash ?? undefined;
+    receipt.blockNumber = Number(log.blockNumber);
     receiptStore.store(receipt);
-    logger.info(CTX, `Indexed receipt ${hash} for vault ${vaultAddress} run ${runId}`);
+    logger.info(CTX, `Indexed receipt ${reasoningHash} for vault ${vaultAddress} run ${runId}`);
   }
 }
 

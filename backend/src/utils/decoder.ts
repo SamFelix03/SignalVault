@@ -1,6 +1,7 @@
-import { decodeEventLog, type Log } from 'viem';
+import { decodeEventLog, type Address, type Log } from 'viem';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { PerformanceLedgerABI } from '../abis/PerformanceLedger';
+import { vaultIndexer } from '../services/vault-indexer';
 
 export interface DecodedSignalUpdated {
   vault: `0x${string}`;
@@ -50,14 +51,24 @@ export function decodeTradeSettled(log: Log): DecodedTradeSettled {
     topics: log.topics,
     data: log.data,
   });
-  const args = decoded.args as any;
+  const args = decoded.args as {
+    tradeIndex: bigint;
+    direction: number;
+    pnl: bigint;
+    entryPrice: bigint;
+    exitPrice: bigint;
+  };
+  const ledger = log.address as Address;
+  const vault =
+    vaultIndexer.getAllVaults().find((v) => v.performanceLedger.toLowerCase() === ledger.toLowerCase())
+      ?.address ?? ledger;
   return {
-    vault: log.address as `0x${string}`,
-    follower: log.address as `0x${string}`,
+    vault: vault as `0x${string}`,
+    follower: '0x0000000000000000000000000000000000000000' as `0x${string}`,
     direction: args.direction,
     entryPrice: args.entryPrice,
     exitPrice: args.exitPrice,
-    pnlBps: args.pnl ?? BigInt(0),
+    pnlBps: args.pnl,
     signalHash: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
   };
 }

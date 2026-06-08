@@ -58,7 +58,7 @@ export function useVaultSignal(vaultAddress: Address) {
 
   const { data, isLoading, error, refetch } = useReadContract({
     ...vaultConfig(vaultAddress),
-    functionName: 'currentSignal',
+    functionName: 'getCurrentSignal',
     query: {
       enabled: !isMockMode(),
       refetchInterval: 10_000,

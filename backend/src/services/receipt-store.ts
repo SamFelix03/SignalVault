@@ -19,6 +19,10 @@ export interface Receipt {
   epoch: number;
   blockNumber: number;
   stages: ReceiptStage[];
+  vaultAddress?: string;
+  orchestrator?: string;
+  runId?: number;
+  txHash?: string;
 }
 
 class ReceiptStore {
