@@ -7,6 +7,8 @@ import { pipelineRouter } from './routes/pipeline';
 import { followerRouter } from './routes/followers';
 import { eventsRouter } from './routes/events';
 import { composabilityRouter } from './routes/composability';
+import { setupRouter } from './routes/setup';
+import { followerVaultIndex } from '../services/follower-vault-index';
 import { vaultIndexer } from '../services/vault-indexer';
 import { streamPublisher } from '../services/stream-publisher';
 import { mirrorWorker } from '../services/mirror-worker';
@@ -38,11 +40,15 @@ app.use('/api/pipeline', pipelineRouter);
 app.use('/api/followers', followerRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/composability', composabilityRouter);
+app.use('/api/setup', setupRouter);
 
 async function bootstrap(): Promise<void> {
   try {
     await vaultIndexer.start();
     logger.info(CTX, 'Vault indexer initialized');
+
+    await followerVaultIndex.syncAll();
+    logger.info(CTX, 'Follower vault index synced');
 
     await mirrorWorker.reconcileAll();
     logger.info(CTX, 'Signal-sync mirror reconciled');

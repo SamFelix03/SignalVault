@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 
 export type VaultUpdateEvent = {
-  type: 'vault-update' | 'pipeline-update';
+  type: 'vault-update' | 'pipeline-update' | 'setup-update';
   vault?: string;
   data: unknown;
 };
@@ -13,6 +13,10 @@ class AppEventBus extends EventEmitter {
 
   emitPipelineUpdate(vault: string, data: unknown): void {
     this.emit('event', { type: 'pipeline-update', vault, data } satisfies VaultUpdateEvent);
+  }
+
+  emitSetupUpdate(vault: string, data: unknown): void {
+    this.emit('event', { type: 'setup-update', vault, data } satisfies VaultUpdateEvent);
   }
 }
 

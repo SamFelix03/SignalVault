@@ -4,6 +4,7 @@ import { StrategyVaultABI } from '../abis/StrategyVault';
 import { vaultIndexer } from './vault-indexer';
 import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import { followerMirrorStore, type MirrorOpenLeg, type MirrorSettledTrade } from './follower-mirror-store';
+import { followerVaultIndex } from './follower-vault-index';
 import { fetchEthUsdCents } from './mark-price';
 import { logger } from '../utils/logger';
 import type { DecodedSignalUpdated } from '../utils/decoder';
@@ -70,7 +71,7 @@ class MirrorWorker {
 
     const markCents = await fetchEthUsdCents();
     const timestamp = event.timestamp ?? Math.floor(Date.now() / 1000);
-    const vaultName = vault.strategyPrompt?.slice(0, 50) || 'Strategy Vault';
+    const vaultName = followerVaultIndex.getVaultDisplayName(vaultAddress);
 
     let followers: Address[];
     try {
@@ -225,6 +226,7 @@ class MirrorWorker {
 
   /** Open legs for subscribers when backend starts mid-signal (no prior SignalUpdated in this process). */
   async reconcileAll(): Promise<void> {
+    await followerVaultIndex.syncAll();
     const markCents = await fetchEthUsdCents();
     const now = Math.floor(Date.now() / 1000);
 
@@ -232,34 +234,18 @@ class MirrorWorker {
       const signal = vault.currentSignal;
       if (!signal) continue;
 
-      let followers: Address[];
-      try {
-        followers = await publicClient.readContract({
-          address: vault.address,
-          abi: vaultAbi,
-          functionName: 'getFollowers',
-        }) as Address[];
-      } catch {
-        continue;
-      }
+      const followers = followerVaultIndex.getFollowersForVault(vault.address);
+      if (followers.length === 0) continue;
+
+      const reasoningHash = signal.reasoningHash as `0x${string}`;
+      const signalHash = computeOnChainSignalHash(
+        signal.direction,
+        signal.sizeBps,
+        BigInt(signal.stopPrice),
+        BigInt(signal.epoch),
+      );
 
       for (const follower of followers) {
-        const config = await publicClient.readContract({
-          address: vault.address,
-          abi: vaultAbi,
-          functionName: 'getFollowerConfig',
-          args: [follower],
-        }) as readonly [number, bigint, number, bigint, boolean];
-
-        if (!config[4]) continue;
-
-        const reasoningHash = signal.reasoningHash as `0x${string}`;
-        const signalHash = computeOnChainSignalHash(
-          signal.direction,
-          signal.sizeBps,
-          BigInt(signal.stopPrice),
-          BigInt(signal.epoch),
-        );
         if (followerMirrorStore.wasSignalProcessed(follower, vault.address, signalHash)) continue;
 
         const existing = followerMirrorStore.getOpenLeg(follower, vault.address);

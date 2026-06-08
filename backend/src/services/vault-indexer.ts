@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import { eventBus } from './event-bus';
 import { computeOnChainSignalHash, mirrorWorker } from './mirror-worker';
+import { followerVaultIndex } from './follower-vault-index';
 
 const CTX = 'VaultIndexer';
 
@@ -171,6 +172,10 @@ class VaultIndexer {
       if (!this.signals.has(vaultAddr)) this.signals.set(vaultAddr, []);
       if (!this.trades.has(vaultAddr)) this.trades.set(vaultAddr, []);
 
+      followerVaultIndex.syncVault(vaultAddr).catch((err) => {
+        logger.warn(CTX, `Follower index sync failed for ${vaultAddr}`, err);
+      });
+
       logger.info(CTX, `Indexed vault #${vaultId}: ${vaultAddr}`);
     } catch (err) {
       logger.error(CTX, `Failed to index vault #${vaultId}`, err);
@@ -211,7 +216,11 @@ class VaultIndexer {
             abi: StrategyVaultABI,
             functionName: 'getFollowers',
           }) as Address[];
+          const prevFollowerCount = vault.followerCount;
           vault.followerCount = followers.length;
+          if (followers.length !== prevFollowerCount) {
+            followerVaultIndex.syncVault(address).catch(() => {});
+          }
 
           const signal = await publicClient.readContract({
             address,
@@ -295,6 +304,34 @@ class VaultIndexer {
 
   getVaultTrades(address: Address): TradeRecord[] {
     return this.trades.get(address) || [];
+  }
+
+  /** Immediately index a vault by address (e.g. right after deploy). */
+  async forceIndexVault(vaultAddress: Address): Promise<VaultInfo | undefined> {
+    if (!config.vaultFactoryAddress) return undefined;
+
+    const addr = getAddress(vaultAddress);
+    const existing = this.vaults.get(addr);
+    if (existing) return existing;
+
+    try {
+      const vaultId = await publicClient.readContract({
+        address: config.vaultFactoryAddress,
+        abi: VaultFactoryABI,
+        functionName: 'vaultIndex',
+        args: [addr],
+      }) as bigint;
+
+      await this.indexVaultById(Number(vaultId));
+      this.indexedDeploymentCount = Math.max(
+        this.indexedDeploymentCount,
+        Number(vaultId) + 1,
+      );
+      return this.vaults.get(addr);
+    } catch (err) {
+      logger.error(CTX, `forceIndexVault failed for ${addr}`, err);
+      return undefined;
+    }
   }
 }
 
