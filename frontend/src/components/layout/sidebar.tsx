@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -37,9 +38,14 @@ export function Sidebar({ collapsed, onCollapsedChange, onNavigate }: SidebarPro
     >
       <div className="flex h-16 items-center border-b border-sidebar-border px-4">
         <Link href="/" className="flex items-center gap-3" onClick={onNavigate}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white">
-            <Activity className="h-5 w-5 text-accent-foreground" />
-          </div>
+          <Image
+            src="/logo.png"
+            alt="SignalVault"
+            width={36}
+            height={36}
+            className="h-9 w-9 shrink-0 object-contain"
+            priority
+          />
           <span
             className={cn(
               'whitespace-nowrap text-lg font-semibold text-sidebar-foreground transition-all duration-300',

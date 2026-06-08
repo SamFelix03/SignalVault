@@ -1,5 +1,7 @@
 'use client'
 
+import Image from 'next/image'
+import Link from 'next/link'
 import { useState } from 'react'
 import { Menu } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -41,7 +43,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
               <Menu className="h-5 w-5" />
             </Button>
-            <span className="ml-2 text-lg font-semibold">SignalVault</span>
+            <Link href="/" className="ml-2 flex items-center gap-2">
+              <Image
+                src="/logo.png"
+                alt="SignalVault"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain"
+              />
+              <span className="text-lg font-semibold">SignalVault</span>
+            </Link>
           </div>
 
           <AppHeader />
