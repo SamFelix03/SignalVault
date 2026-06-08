@@ -2,7 +2,12 @@ import { Router, type Request, type Response } from 'express';
 import { type Address, getAddress, parseEther } from 'viem';
 import { publicClient, getWalletClient } from '../../config/chains';
 import { vaultIndexer } from '../../services/vault-indexer';
-import { schedulePipelineWatchdog } from '../../services/pipeline-watchdog';
+import {
+  appendPipelineLog,
+  ensurePipelineWatchdog,
+  getPipelineLogs,
+  syncPipelineRun,
+} from '../../services/pipeline-run-tracker';
 import { AgentOrchestratorABI } from '../../abis/AgentOrchestrator';
 import { JSON_FETCH_COST, LLM_PARSE_COST, LLM_INFER_COST } from '../../config/constants';
 import { logger } from '../../utils/logger';
@@ -57,6 +62,7 @@ pipelineRouter.get('/:vaultAddress', async (req: Request, res: Response) => {
 
     const flags = status[1];
     const completed = (flags & 8) !== 0;
+    const sync = await syncPipelineRun(orchestratorAddress, currentRunId);
 
     res.json({
       runId: currentRunId.toString(),
@@ -64,6 +70,9 @@ pipelineRouter.get('/:vaultAddress', async (req: Request, res: Response) => {
       flags,
       startedAt: status[2].toString(),
       completed,
+      staleInSec: sync.staleIn,
+      watchdogActive: sync.watchdogActive,
+      logs: getPipelineLogs(orchestratorAddress, currentRunId),
       data: {
         fetchedPrice: data[0].toString(),
         fetchedFunding: data[1].toString(),
@@ -106,7 +115,8 @@ pipelineRouter.post('/:vaultAddress/trigger', async (req: Request, res: Response
       functionName: 'currentRunId',
     }) as bigint;
 
-    schedulePipelineWatchdog(orchestratorAddress, runId);
+    appendPipelineLog(orchestratorAddress, runId, 'info', `Pipeline started (tx ${txHash})`);
+    ensurePipelineWatchdog(orchestratorAddress, runId);
     eventBus.emitPipelineUpdate(vaultAddress, { runId: runId.toString(), status: 'started', txHash });
 
     logger.info(CTX, `Triggered pipeline for vault ${vaultAddress}`, { txHash, runId: runId.toString() });

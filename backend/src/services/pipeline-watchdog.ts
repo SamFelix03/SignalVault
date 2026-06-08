@@ -44,11 +44,9 @@ async function finalizeWithFallback(orchestrator: Address, runId: bigint): Promi
  * on-chain via finalizeStaleRunWithFallback (overwrites agent placeholders).
  */
 export function schedulePipelineWatchdog(orchestrator: Address, runId: bigint): void {
-  const deadline = Date.now() + PIPELINE_TIMEOUT_SEC * 1000;
-
   const timer = setInterval(async () => {
     try {
-      const [, flags] = await publicClient.readContract({
+      const [, flags, startedAt] = await publicClient.readContract({
         address: orchestrator,
         abi: AgentOrchestratorABI,
         functionName: 'getPipelineStatus',
@@ -60,10 +58,11 @@ export function schedulePipelineWatchdog(orchestrator: Address, runId: bigint): 
         return;
       }
 
-      if (Date.now() < deadline) return;
+      const finalizeAt = Number(startedAt) * 1000 + PIPELINE_TIMEOUT_SEC * 1000;
+      if (Date.now() < finalizeAt) return;
 
       clearInterval(timer);
-      logger.info(CTX, `Pipeline run ${runId} timed out — finalizing with HTTP fallback data`, { orchestrator });
+      logger.info(CTX, `Pipeline run ${runId} timed out — finalizing`, { orchestrator });
 
       const txHash = await finalizeWithFallback(orchestrator, runId);
       logger.info(CTX, 'Pipeline finalized', { txHash, orchestrator, runId: runId.toString() });

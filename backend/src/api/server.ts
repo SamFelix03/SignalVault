@@ -10,6 +10,7 @@ import { composabilityRouter } from './routes/composability';
 import { vaultIndexer } from '../services/vault-indexer';
 import { streamPublisher } from '../services/stream-publisher';
 import { pipelineReceiptIndexer } from '../services/pipeline-receipt-indexer';
+import { recoverInFlightPipelines } from '../services/pipeline-run-tracker';
 import { logger } from '../utils/logger';
 
 dotenv.config();
@@ -47,6 +48,9 @@ async function bootstrap(): Promise<void> {
 
     await pipelineReceiptIndexer.start();
     logger.info(CTX, 'Pipeline receipt indexer initialized');
+
+    await recoverInFlightPipelines();
+    logger.info(CTX, 'In-flight pipeline recovery complete');
 
     app.listen(PORT, () => {
       logger.info(CTX, `Server running on port ${PORT}`);

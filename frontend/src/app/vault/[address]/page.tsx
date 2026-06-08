@@ -202,7 +202,10 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
 
         <TabsContent value="pipeline" className="mt-6">
           {resolvedOrchestrator ? (
-            <PipelineStatusPage orchestratorAddress={resolvedOrchestrator as Address} />
+            <PipelineStatusPage
+              vaultAddress={vaultAddress}
+              orchestratorAddress={resolvedOrchestrator as Address}
+            />
           ) : (
             <Card>
               <CardContent className="p-8 text-center">

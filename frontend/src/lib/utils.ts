@@ -15,6 +15,15 @@ export function formatPrice(price: number | bigint, decimals = 2): string {
   return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
+/** On-chain funding field stores CoinGecko 24h change as abs(pct) × 1e8 */
+export function formatFundingChange(raw: number | bigint): string {
+  const n = typeof raw === 'bigint' ? Number(raw) : raw
+  if (n === 0) return '—'
+  const pct = n / 1e8
+  const sign = pct >= 0 ? '+' : ''
+  return `${sign}${pct.toFixed(2)}%`
+}
+
 export function directionLabel(direction: number): 'LONG' | 'SHORT' | 'FLAT' {
   if (direction === 1) return 'LONG'
   if (direction === -1 || direction === 2) return 'SHORT'
