@@ -1,6 +1,7 @@
 import { decodeEventLog, type Address, type Log } from 'viem';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { PerformanceLedgerABI } from '../abis/PerformanceLedger';
+import { MirrorReactorABI } from '../abis/MirrorReactor';
 import { vaultIndexer } from '../services/vault-indexer';
 
 export interface DecodedSignalUpdated {
@@ -20,11 +21,21 @@ export interface DecodedTradeSettled {
   exitPrice: bigint;
   pnlBps: bigint;
   signalHash: `0x${string}`;
+  timestamp?: number;
 }
 
 export interface DecodedDrawdownUpdated {
   vault: `0x${string}`;
   maxDrawdownBps: bigint;
+}
+
+export interface DecodedMirrorExecuted {
+  vault: `0x${string}`;
+  follower: `0x${string}`;
+  direction: number;
+  size: bigint;
+  positionId: `0x${string}`;
+  price: bigint;
 }
 
 export function decodeSignalUpdated(log: Log): DecodedSignalUpdated {
@@ -41,6 +52,35 @@ export function decodeSignalUpdated(log: Log): DecodedSignalUpdated {
     stopPrice: (decoded.args as any).stopPrice,
     reasoningHash: (decoded.args as any).reasoningHash,
     reasoningSummary: (decoded.args as any).reasoningSummary ?? '',
+  };
+}
+
+export function decodeFollowerTradeSettled(log: Log): DecodedTradeSettled {
+  const decoded = decodeEventLog({
+    abi: PerformanceLedgerABI,
+    eventName: 'FollowerTradeSettled',
+    topics: log.topics,
+    data: log.data,
+  });
+  const args = decoded.args as {
+    follower: Address;
+    vault: Address;
+    direction: number;
+    entryPrice: bigint;
+    exitPrice: bigint;
+    size: bigint;
+    pnl: bigint;
+    signalHash: `0x${string}`;
+  };
+  return {
+    vault: args.vault,
+    follower: args.follower,
+    direction: args.direction,
+    entryPrice: args.entryPrice,
+    exitPrice: args.exitPrice,
+    pnlBps: args.pnl,
+    signalHash: args.signalHash,
+    timestamp: Math.floor(Date.now() / 1000),
   };
 }
 
@@ -70,6 +110,33 @@ export function decodeTradeSettled(log: Log): DecodedTradeSettled {
     exitPrice: args.exitPrice,
     pnlBps: args.pnl,
     signalHash: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+  };
+}
+
+export function decodeMirrorExecuted(log: Log): DecodedMirrorExecuted {
+  const decoded = decodeEventLog({
+    abi: MirrorReactorABI,
+    eventName: 'MirrorExecuted',
+    topics: log.topics,
+    data: log.data,
+  });
+  const args = decoded.args as {
+    follower: Address;
+    direction: number;
+    size: bigint;
+    positionId: `0x${string}`;
+    price: bigint;
+  };
+  const vault =
+    vaultIndexer.getAllVaults().find((v) => v.mirrorReactor.toLowerCase() === log.address.toLowerCase())
+      ?.address ?? log.address;
+  return {
+    vault: vault as `0x${string}`,
+    follower: args.follower,
+    direction: args.direction,
+    size: args.size,
+    positionId: args.positionId,
+    price: args.price,
   };
 }
 

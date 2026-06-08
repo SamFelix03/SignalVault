@@ -42,10 +42,14 @@ interface ISpotPool {
 contract DreamDexAdapter is IDreamDEX {
     ISpotPool public immutable spotPool;
     address public immutable mirrorReactor;
+    address public baseToken;
     address public quoteToken;
 
+    uint256 public lastExecutionPrice;
+
     event QuoteDeposited(address indexed from, uint256 amount);
-    event OrderPlacedFor(address indexed trader, int8 direction, uint128 orderId, bool success);
+    event BaseDeposited(address indexed from, uint256 amount);
+    event OrderPlacedFor(address indexed trader, int8 direction, uint128 orderId, bool success, uint256 price);
 
     modifier onlyMirror() {
         require(msg.sender == mirrorReactor, "not mirror");
@@ -55,10 +59,10 @@ contract DreamDexAdapter is IDreamDEX {
     constructor(address _spotPool, address _mirrorReactor) {
         spotPool = ISpotPool(_spotPool);
         mirrorReactor = _mirrorReactor;
-        (, quoteToken,,,,,) = spotPool.getPoolParams();
+        (baseToken, quoteToken,,,,,) = spotPool.getPoolParams();
     }
 
-    /// @notice Fund the adapter's dreamDEX vault balance (USDso for WBTC pool).
+    /// @notice Fund the adapter's dreamDEX vault balance (USDso for WBTC pool bids).
     function depositQuote(uint256 amount) external {
         require(amount > 0, "zero amount");
         require(IERC20(quoteToken).transferFrom(msg.sender, address(this), amount), "transfer failed");
@@ -67,6 +71,22 @@ contract DreamDexAdapter is IDreamDEX {
         emit QuoteDeposited(msg.sender, amount);
     }
 
+    /// @notice Fund base token (WBTC) for IOC asks / short mirrors.
+    function depositBase(uint256 amount) external {
+        require(amount > 0, "zero amount");
+        require(IERC20(baseToken).transferFrom(msg.sender, address(this), amount), "transfer failed");
+        require(IERC20(baseToken).approve(address(spotPool), amount), "approve failed");
+        spotPool.deposit(baseToken, amount);
+        emit BaseDeposited(msg.sender, amount);
+    }
+
+    /// @notice Mid-market price from dreamDEX EMA (quote per base, raw pool units).
+    function getMarkPrice() external view returns (uint256) {
+        (uint256 emaValue,) = spotPool.getMidpointEmaState();
+        return emaValue;
+    }
+
+    /// @param size Quote notional in USDso (18 decimals) for bids; base quantity hint for asks.
     function placeOrder(
         address trader,
         int8 direction,
@@ -79,9 +99,12 @@ contract DreamDexAdapter is IDreamDEX {
         bool isBid = direction > 0;
         (uint256 price, uint256 minQuantity, uint256 lotSize) =
             _resolveOrderPrice(stopPrice, maxSlippageBps, isBid);
-        uint256 quantity = _normalizeQuantity(size, minQuantity, lotSize);
+        uint256 quantity = isBid
+            ? _quoteToQuantity(size, price, minQuantity, lotSize)
+            : _normalizeQuantity(size, minQuantity, lotSize);
         if (quantity == 0) return bytes32(0);
 
+        lastExecutionPrice = price;
         uint64 expireNs = uint64(block.timestamp + 1 hours) * 1_000_000_000;
 
         (bool success, uint128 orderId) = spotPool.placeOrder(
@@ -96,12 +119,11 @@ contract DreamDexAdapter is IDreamDEX {
             0
         );
 
-        emit OrderPlacedFor(trader, direction, orderId, success);
-        return bytes32(uint256(orderId));
+        emit OrderPlacedFor(trader, direction, orderId, success, price);
+        return success ? bytes32(uint256(orderId)) : bytes32(0);
     }
 
     function closePosition(bytes32 positionId) external returns (int256) {
-        // IOC orders settle immediately; nothing to close for the adapter path.
         positionId;
         return 0;
     }
@@ -122,6 +144,20 @@ contract DreamDexAdapter is IDreamDEX {
         return new bytes32[](0);
     }
 
+    function _quoteToQuantity(
+        uint256 quoteNotional,
+        uint256 price,
+        uint256 minQuantity,
+        uint256 lotSize
+    ) internal pure returns (uint256) {
+        if (price == 0 || quoteNotional == 0) return 0;
+        // quoteNotional (18 dec USDso) → base quantity; WBTC uses 8 decimals on testnet.
+        uint256 qty = (quoteNotional * 1e8) / price;
+        if (lotSize > 0) qty = (qty / lotSize) * lotSize;
+        if (qty < minQuantity) return 0;
+        return qty;
+    }
+
     function _resolveOrderPrice(
         uint256 stopPrice,
         uint16 maxSlippageBps,
@@ -134,7 +170,6 @@ contract DreamDexAdapter is IDreamDEX {
         if (emaValue > 0) {
             price = emaValue;
         } else if (stopPrice > 0) {
-            // Signal stop prices are stored in cents (2 decimals); dreamDEX uses quote-token raw units.
             price = stopPrice * 1e14;
         } else {
             price = tickSize;

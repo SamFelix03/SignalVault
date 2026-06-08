@@ -35,9 +35,39 @@ contract PerformanceLedger {
     VaultStats public stats;
     TradeRecord[] public tradeHistory;
 
+    struct FollowerTradeRecord {
+        int8 direction;
+        uint256 entryPrice;
+        uint256 exitPrice;
+        uint256 size;
+        int256 pnl;
+        bytes32 signalHash;
+        uint256 timestamp;
+    }
+
+    mapping(address => FollowerTradeRecord[]) private _followerTrades;
+    mapping(address => FollowerTradeRecord) public openFollowerPositions;
+
     uint256 public pendingFees;
 
     event TradeSettled(uint256 indexed tradeIndex, int8 direction, int256 pnl, uint256 entryPrice, uint256 exitPrice);
+    event FollowerTradeSettled(
+        address indexed follower,
+        address indexed vault,
+        int8 direction,
+        uint256 entryPrice,
+        uint256 exitPrice,
+        uint256 size,
+        int256 pnl,
+        bytes32 signalHash
+    );
+    event FollowerPositionOpened(
+        address indexed follower,
+        int8 direction,
+        uint256 entryPrice,
+        uint256 size,
+        bytes32 signalHash
+    );
     event DrawdownUpdated(address indexed vault, uint256 currentDrawdownBps, uint256 maxDrawdownBps);
     event EpochFeeSettled(uint256 epoch, uint256 feeAmount);
     event MarkToMarket(uint256 oraclePrice, uint256 timestamp);
@@ -123,6 +153,87 @@ contract PerformanceLedger {
 
         emit TradeSettled(tradeHistory.length - 1, direction, pnl, entryPrice, exitPrice);
         emit DrawdownUpdated(vault, stats.currentDrawdownBps, stats.maxDrawdownBps);
+    }
+
+    /// @notice Record a follower mirror open leg (called by MirrorReactor).
+    function openFollowerPosition(
+        address follower,
+        int8 direction,
+        uint256 entryPrice,
+        uint256 size,
+        bytes32 signalHash
+    ) external onlyAuthorized {
+        require(follower != address(0), "zero follower");
+        require(direction != 0 && size > 0, "invalid open");
+        openFollowerPositions[follower] = FollowerTradeRecord({
+            direction: direction,
+            entryPrice: entryPrice,
+            exitPrice: 0,
+            size: size,
+            pnl: 0,
+            signalHash: signalHash,
+            timestamp: block.timestamp
+        });
+        emit FollowerPositionOpened(follower, direction, entryPrice, size, signalHash);
+    }
+
+    /// @notice Settle a follower's open mirror leg and append to trade history.
+    function recordFollowerTrade(
+        address follower,
+        int8 direction,
+        uint256 entryPrice,
+        uint256 exitPrice,
+        uint256 size,
+        bytes32 signalHash
+    ) external onlyAuthorized nonReentrant {
+        require(follower != address(0), "zero follower");
+        require(direction != 0 && size > 0, "invalid trade");
+
+        int256 pnl;
+        if (direction > 0) {
+            pnl = int256(exitPrice) - int256(entryPrice);
+        } else {
+            pnl = int256(entryPrice) - int256(exitPrice);
+        }
+        pnl = (pnl * int256(size)) / 1e18;
+
+        FollowerTradeRecord memory record = FollowerTradeRecord({
+            direction: direction,
+            entryPrice: entryPrice,
+            exitPrice: exitPrice,
+            size: size,
+            pnl: pnl,
+            signalHash: signalHash,
+            timestamp: block.timestamp
+        });
+
+        _followerTrades[follower].push(record);
+        delete openFollowerPositions[follower];
+
+        emit FollowerTradeSettled(
+            follower, vault, direction, entryPrice, exitPrice, size, pnl, signalHash
+        );
+    }
+
+    function getFollowerTradeCount(address follower) external view returns (uint256) {
+        return _followerTrades[follower].length;
+    }
+
+    function getFollowerTradeHistory(
+        address follower,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (FollowerTradeRecord[] memory) {
+        FollowerTradeRecord[] storage history = _followerTrades[follower];
+        uint256 total = history.length;
+        if (offset >= total) return new FollowerTradeRecord[](0);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        FollowerTradeRecord[] memory result = new FollowerTradeRecord[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            result[i - offset] = history[i];
+        }
+        return result;
     }
 
     function markToMarket() external view returns (uint256 price, uint256 updatedAt) {

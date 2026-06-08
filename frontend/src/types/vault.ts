@@ -51,4 +51,5 @@ export interface TradeRecord {
   reasoningHash: string
   timestamp: number
   txHash: string
+  vaultAddress?: string
 }

@@ -12,12 +12,58 @@ export const PerformanceLedgerABI = [
   },
   {
     type: 'event',
+    name: 'FollowerTradeSettled',
+    inputs: [
+      { name: 'follower', type: 'address', indexed: true },
+      { name: 'vault', type: 'address', indexed: true },
+      { name: 'direction', type: 'int8', indexed: false },
+      { name: 'entryPrice', type: 'uint256', indexed: false },
+      { name: 'exitPrice', type: 'uint256', indexed: false },
+      { name: 'size', type: 'uint256', indexed: false },
+      { name: 'pnl', type: 'int256', indexed: false },
+      { name: 'signalHash', type: 'bytes32', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'FollowerPositionOpened',
+    inputs: [
+      { name: 'follower', type: 'address', indexed: true },
+      { name: 'direction', type: 'int8', indexed: false },
+      { name: 'entryPrice', type: 'uint256', indexed: false },
+      { name: 'size', type: 'uint256', indexed: false },
+      { name: 'signalHash', type: 'bytes32', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
     name: 'DrawdownUpdated',
     inputs: [
       { name: 'vault', type: 'address', indexed: true },
       { name: 'currentDrawdownBps', type: 'uint256', indexed: false },
       { name: 'maxDrawdownBps', type: 'uint256', indexed: false },
     ],
+  },
+  {
+    type: 'function',
+    name: 'openFollowerPositions',
+    inputs: [{ name: '', type: 'address' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'direction', type: 'int8' },
+          { name: 'entryPrice', type: 'uint256' },
+          { name: 'exitPrice', type: 'uint256' },
+          { name: 'size', type: 'uint256' },
+          { name: 'pnl', type: 'int256' },
+          { name: 'signalHash', type: 'bytes32' },
+          { name: 'timestamp', type: 'uint256' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -72,6 +118,38 @@ export const PerformanceLedgerABI = [
         ],
       },
     ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getFollowerTradeHistory',
+    inputs: [
+      { name: 'follower', type: 'address' },
+      { name: 'offset', type: 'uint256' },
+      { name: 'limit', type: 'uint256' },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple[]',
+        components: [
+          { name: 'direction', type: 'int8' },
+          { name: 'entryPrice', type: 'uint256' },
+          { name: 'exitPrice', type: 'uint256' },
+          { name: 'size', type: 'uint256' },
+          { name: 'pnl', type: 'int256' },
+          { name: 'signalHash', type: 'bytes32' },
+          { name: 'timestamp', type: 'uint256' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getFollowerTradeCount',
+    inputs: [{ name: 'follower', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
   },
   {

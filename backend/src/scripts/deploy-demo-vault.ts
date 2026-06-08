@@ -112,9 +112,11 @@ async function main() {
   console.log('  ✓ PerformanceLedger set on MirrorReactor');
 
   console.log('\n=== NEXT STEPS ===');
-  console.log('1. Update frontend/src/lib/constants.ts with new addresses');
+  console.log('1. Update frontend/src/lib/constants.ts and backend/.env with new addresses');
   console.log('2. Run: npx tsx src/scripts/register-subscriptions.ts');
-  console.log('3. Fund the EpochCron contract with STT for automated pipeline execution');
+  console.log('3. npx tsx src/scripts/fund-epoch-cron.ts');
+  console.log('4. npx tsx src/scripts/fund-mirror-reactor.ts');
+  console.log('5. npx tsx src/scripts/fund-dex-adapter.ts  (requires USDso + WBTC on deployer)');
 }
 
 main().catch((err) => {

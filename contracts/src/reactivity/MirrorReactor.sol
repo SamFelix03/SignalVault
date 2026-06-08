@@ -7,7 +7,27 @@ import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
 import {IDreamDEX} from "../interfaces/IDreamDEX.sol";
 
 interface IPerformanceLedger {
-    function recordTrade(int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size) external;
+    function openFollowerPosition(
+        address follower,
+        int8 direction,
+        uint256 entryPrice,
+        uint256 size,
+        bytes32 signalHash
+    ) external;
+
+    function recordFollowerTrade(
+        address follower,
+        int8 direction,
+        uint256 entryPrice,
+        uint256 exitPrice,
+        uint256 size,
+        bytes32 signalHash
+    ) external;
+}
+
+interface IDreamDexPricing {
+    function getMarkPrice() external view returns (uint256);
+    function lastExecutionPrice() external view returns (uint256);
 }
 
 contract MirrorReactor is SomniaEventHandler {
@@ -22,8 +42,18 @@ contract MirrorReactor is SomniaEventHandler {
     uint256 public subscriptionId;
     uint256 public totalMirrored;
 
-    event MirrorExecuted(address indexed follower, int8 direction, uint256 size, bytes32 positionId);
+    struct FollowerOpenLeg {
+        int8 direction;
+        uint256 entryPrice;
+        uint256 size;
+        bytes32 positionId;
+    }
+
+    mapping(address => FollowerOpenLeg) public followerOpenLegs;
+
+    event MirrorExecuted(address indexed follower, int8 direction, uint256 size, bytes32 positionId, uint256 price);
     event MirrorFailed(address indexed follower, string reason);
+    event MirrorSettled(address indexed follower, int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size);
     event SubscriptionRegistered(uint256 subscriptionId);
 
     modifier onlyOwner() {
@@ -65,35 +95,91 @@ contract MirrorReactor is SomniaEventHandler {
     ) internal override {
         if (emitter != vault || eventTopics[0] != SIGNAL_UPDATED_TOPIC) return;
 
-        (int8 direction, uint16 sizeBps, uint256 stopPrice,,) =
-            abi.decode(data, (int8, uint16, uint256, string, bytes32));
+        bytes32 signalHash = eventTopics.length > 1 ? eventTopics[1] : bytes32(0);
 
-        if (direction == 0) return;
+        (
+            int8 direction,
+            uint16 sizeBps,
+            uint256 stopPrice,
+            string memory reasoningSummary,
+            bytes32 reasoningHash
+        ) = abi.decode(data, (int8, uint16, uint256, string, bytes32));
+        reasoningSummary;
 
+        if (signalHash == bytes32(0)) signalHash = reasoningHash;
+
+        uint256 markPrice = IDreamDexPricing(address(dex)).getMarkPrice();
         address[] memory followers = IStrategyVault(vault).getFollowers();
 
         for (uint256 i = 0; i < followers.length; i++) {
-            IStrategyVault.FollowerConfig memory config = IStrategyVault(vault).getFollowerConfig(followers[i]);
+            address follower = followers[i];
+            IStrategyVault.FollowerConfig memory config = IStrategyVault(vault).getFollowerConfig(follower);
             if (!config.active) continue;
 
-            uint256 scaledSize = (config.maxPositionSize * sizeBps * config.riskPct) / (10000 * 100);
-            if (scaledSize == 0) continue;
+            _settleOpenLeg(follower, markPrice, signalHash);
+
+            if (direction == 0) continue;
+
+            // Quote notional in USDso (18 decimals): maxPosition × signal size × risk scaling
+            uint256 quoteNotional = (config.maxPositionSize * uint256(sizeBps) * uint256(config.riskPct))
+                / (10_000 * 100);
+            if (quoteNotional == 0) continue;
 
             uint256 adjustedStop = direction > 0
                 ? (stopPrice > config.stopLossBuffer ? stopPrice - config.stopLossBuffer : 0)
                 : stopPrice + config.stopLossBuffer;
 
             try dex.placeOrder{value: 0}(
-                followers[i], direction, scaledSize, adjustedStop, config.maxSlippageBps
+                follower, direction, quoteNotional, adjustedStop, config.maxSlippageBps
             ) returns (bytes32 positionId) {
+                if (positionId == bytes32(0)) {
+                    emit MirrorFailed(follower, "order not filled");
+                    continue;
+                }
+
+                uint256 fillPrice = IDreamDexPricing(address(dex)).lastExecutionPrice();
+                if (fillPrice == 0) fillPrice = markPrice;
+
+                followerOpenLegs[follower] = FollowerOpenLeg({
+                    direction: direction,
+                    entryPrice: fillPrice,
+                    size: quoteNotional,
+                    positionId: positionId
+                });
+
+                if (performanceLedger != address(0)) {
+                    IPerformanceLedger(performanceLedger).openFollowerPosition(
+                        follower, direction, fillPrice, quoteNotional, signalHash
+                    );
+                }
+
                 totalMirrored++;
-                emit MirrorExecuted(followers[i], direction, scaledSize, positionId);
+                emit MirrorExecuted(follower, direction, quoteNotional, positionId, fillPrice);
             } catch Error(string memory reason) {
-                emit MirrorFailed(followers[i], reason);
+                emit MirrorFailed(follower, reason);
             } catch {
-                emit MirrorFailed(followers[i], "unknown error");
+                emit MirrorFailed(follower, "unknown error");
             }
         }
+    }
+
+    function _settleOpenLeg(address follower, uint256 exitPrice, bytes32 signalHash) internal {
+        FollowerOpenLeg memory leg = followerOpenLegs[follower];
+        if (leg.size == 0) return;
+
+        if (performanceLedger != address(0)) {
+            IPerformanceLedger(performanceLedger).recordFollowerTrade(
+                follower,
+                leg.direction,
+                leg.entryPrice,
+                exitPrice > 0 ? exitPrice : leg.entryPrice,
+                leg.size,
+                signalHash
+            );
+        }
+
+        emit MirrorSettled(follower, leg.direction, leg.entryPrice, exitPrice, leg.size);
+        delete followerOpenLegs[follower];
     }
 
     function unregisterSubscription() external onlyOwner {

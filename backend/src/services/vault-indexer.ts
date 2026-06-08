@@ -12,6 +12,8 @@ export interface VaultInfo {
   vaultId: number;
   strategist: Address;
   orchestrator: Address;
+  mirrorReactor: Address;
+  stopReactor: Address;
   performanceLedger: Address;
   feeDistributor: Address;
   drawdownGuard: Address;
@@ -47,6 +49,8 @@ export interface TradeRecord {
   exitPrice: string;
   pnlBps: string;
   signalHash: string;
+  timestamp?: number;
+  size?: string;
 }
 
 class VaultIndexer {
@@ -132,6 +136,8 @@ class VaultIndexer {
         vaultId,
         strategist: strategist as Address,
         orchestrator: dep.orchestrator,
+        mirrorReactor: dep.mirrorReactor,
+        stopReactor: dep.stopReactor,
         performanceLedger: dep.performanceLedger,
         feeDistributor: dep.feeDistributor,
         drawdownGuard: dep.drawdownGuard,

@@ -15,6 +15,14 @@ export function formatPrice(price: number | bigint, decimals = 2): string {
   return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
+/** dreamDEX pool price / notional in raw on-chain units → USD display */
+export function formatPoolPrice(raw: number | bigint): string {
+  const n = typeof raw === 'bigint' ? Number(raw) : raw
+  if (n === 0) return '—'
+  const usd = n > 1e15 ? n / 1e14 : n > 1e6 ? n / 100 : n
+  return usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 /** On-chain funding field stores CoinGecko 24h change as abs(pct) × 1e8 */
 export function formatFundingChange(raw: number | bigint): string {
   const n = typeof raw === 'bigint' ? Number(raw) : raw

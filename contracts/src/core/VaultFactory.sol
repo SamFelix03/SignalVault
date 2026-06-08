@@ -165,6 +165,7 @@ contract VaultFactory {
         IInitVault(dep.vault).setPerformanceLedger(dep.performanceLedger);
         IInitMirror(dep.mirrorReactor).setPerformanceLedger(dep.performanceLedger);
         IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.orchestrator);
+        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.mirrorReactor);
 
         // Transfer ownership from factory to strategist
         ITransferOwnership(dep.vault).transferOwnership(dep.strategist);

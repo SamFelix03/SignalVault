@@ -44,12 +44,27 @@ export default function FollowDashboard() {
     }
 
     Promise.all([
-      fetch(`${API_URL}/api/followers/${address}/positions`).then(r => r.ok ? r.json() : []),
-      fetch(`${API_URL}/api/followers/${address}/trades`).then(r => r.ok ? r.json() : []),
+      fetch(`${API_URL}/api/followers/${address}/positions`).then(r => r.ok ? r.json() : { positions: [] }),
+      fetch(`${API_URL}/api/followers/${address}/trades`).then(r => r.ok ? r.json() : { trades: [] }),
     ])
       .then(([posData, tradeData]) => {
-        setPositions(posData.positions ?? posData ?? [])
-        setTrades(tradeData.trades ?? tradeData ?? [])
+        setPositions(posData.positions ?? [])
+        const rawTrades = tradeData.trades ?? []
+        setTrades(rawTrades.map((t: TradeRecord & { vaultAddress?: string }) => ({
+          epoch: t.epoch ?? t.timestamp ?? 0,
+          direction: t.direction,
+          sizeBps: t.sizeBps ?? 0,
+          stopPrice: t.stopPrice ?? '0',
+          entryPrice: String(t.entryPrice),
+          exitPrice: String(t.exitPrice),
+          pnl: t.pnl ?? 0,
+          pnlPercent: t.pnlPercent ?? 0,
+          reasoning: t.reasoning ?? '',
+          reasoningHash: t.reasoningHash ?? '',
+          timestamp: t.timestamp ?? t.epoch ?? 0,
+          txHash: t.txHash ?? '',
+          vaultAddress: t.vaultAddress,
+        })))
       })
       .catch(() => {})
       .finally(() => setIsLoading(false))
