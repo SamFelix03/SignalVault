@@ -9,6 +9,7 @@ import { eventsRouter } from './routes/events';
 import { composabilityRouter } from './routes/composability';
 import { vaultIndexer } from '../services/vault-indexer';
 import { streamPublisher } from '../services/stream-publisher';
+import { mirrorWorker } from '../services/mirror-worker';
 import { pipelineReceiptIndexer } from '../services/pipeline-receipt-indexer';
 import { recoverInFlightPipelines } from '../services/pipeline-run-tracker';
 import { logger } from '../utils/logger';
@@ -42,6 +43,9 @@ async function bootstrap(): Promise<void> {
   try {
     await vaultIndexer.start();
     logger.info(CTX, 'Vault indexer initialized');
+
+    await mirrorWorker.reconcileAll();
+    logger.info(CTX, 'Signal-sync mirror reconciled');
 
     await streamPublisher.start();
     logger.info(CTX, 'Stream publisher initialized');

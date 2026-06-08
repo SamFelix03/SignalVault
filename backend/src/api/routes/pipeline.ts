@@ -12,7 +12,7 @@ import { AgentOrchestratorABI } from '../../abis/AgentOrchestrator';
 import { JSON_FETCH_COST, LLM_PARSE_COST, LLM_INFER_COST } from '../../config/constants';
 import { logger } from '../../utils/logger';
 import { eventBus } from '../../services/event-bus';
-import { fetchPipelineFallbackData } from '../../services/agent-fallback';
+import { fetchPipelineFallbackData, resolveMacroNewsSummary } from '../../services/agent-fallback';
 import {
   isPlaceholderPipelineText,
   sanitizePipelineText,
@@ -78,7 +78,7 @@ pipelineRouter.get('/:vaultAddress', async (req: Request, res: Response) => {
         newsSummary = sanitizePipelineText(newsSummary);
       }
     } else {
-      newsSummary = sanitizePipelineText(newsSummary);
+      newsSummary = await resolveMacroNewsSummary(newsSummary);
     }
 
     res.json({

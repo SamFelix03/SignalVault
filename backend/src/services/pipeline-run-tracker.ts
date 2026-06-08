@@ -3,6 +3,7 @@ import { publicClient } from '../config/chains';
 import { AgentOrchestratorABI } from '../abis/AgentOrchestrator';
 import { PIPELINE_TIMEOUT_SEC } from '../config/constants';
 import { vaultIndexer } from './vault-indexer';
+import { mirrorWorker } from './mirror-worker';
 import { schedulePipelineWatchdog } from './pipeline-watchdog';
 import { logger } from '../utils/logger';
 
@@ -32,6 +33,7 @@ function runKey(orchestrator: Address, runId: bigint): string {
 const logs = new Map<string, PipelineLogEntry[]>();
 const watchedRuns = new Set<string>();
 const lastSeenStage = new Map<string, number>();
+const mirroredCompletedRuns = new Set<string>();
 
 export function appendPipelineLog(
   orchestrator: Address,
@@ -94,8 +96,19 @@ export async function syncPipelineRun(
       recordStageTransition(orchestrator, runId, 0);
       appendPipelineLog(orchestrator, runId, 'success', 'Pipeline completed');
     }
+    if (!mirroredCompletedRuns.has(key)) {
+      mirroredCompletedRuns.add(key);
+      const vault = vaultIndexer.getVaultByOrchestrator(orchestrator);
+      if (vault) {
+        mirrorWorker.syncVaultSignal(vault.address).catch((err) => {
+          logger.warn(CTX, `Mirror sync after pipeline failed for ${vault.address}`, err);
+        });
+      }
+    }
     return { staleIn: 0, watchdogActive: false };
   }
+
+  mirroredCompletedRuns.delete(key);
 
   recordStageTransition(orchestrator, runId, stage);
 

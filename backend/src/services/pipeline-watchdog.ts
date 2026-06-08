@@ -6,6 +6,7 @@ import { fetchPipelineFallbackData } from './agent-fallback';
 import { appendPipelineLog } from './pipeline-run-tracker';
 import { logger } from '../utils/logger';
 import { vaultIndexer } from './vault-indexer';
+import { mirrorWorker } from './mirror-worker';
 import { eventBus } from './event-bus';
 
 const CTX = 'PipelineWatchdog';
@@ -82,6 +83,12 @@ export function schedulePipelineWatchdog(orchestrator: Address, runId: bigint): 
 
       if ((flags & 8) !== 0) {
         clearInterval(timer);
+        const vault = vaultIndexer.getVaultByOrchestrator(orchestrator);
+        if (vault) {
+          mirrorWorker.syncVaultSignal(vault.address).catch((err) => {
+            logger.warn(CTX, `Mirror sync after pipeline failed for ${vault.address}`, err);
+          });
+        }
         return;
       }
 
@@ -98,6 +105,7 @@ export function schedulePipelineWatchdog(orchestrator: Address, runId: bigint): 
 
       const vault = vaultIndexer.getVaultByOrchestrator(orchestrator);
       if (vault) {
+        await mirrorWorker.syncVaultSignal(vault.address);
         eventBus.emitPipelineUpdate(vault.address, { runId: runId.toString(), status: 'completed', txHash });
       }
     } catch (err) {

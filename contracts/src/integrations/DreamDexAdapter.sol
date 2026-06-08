@@ -99,9 +99,8 @@ contract DreamDexAdapter is IDreamDEX {
         bool isBid = direction > 0;
         (uint256 price, uint256 minQuantity, uint256 lotSize) =
             _resolveOrderPrice(stopPrice, maxSlippageBps, isBid);
-        uint256 quantity = isBid
-            ? _quoteToQuantity(size, price, minQuantity, lotSize)
-            : _normalizeQuantity(size, minQuantity, lotSize);
+        // size is always USDso quote notional (18 dec) from MirrorReactor
+        uint256 quantity = _quoteToQuantity(size, price, minQuantity, lotSize);
         if (quantity == 0) return bytes32(0);
 
         lastExecutionPrice = price;

@@ -1,11 +1,11 @@
-import { decodeEventLog, type Address, type Log } from 'viem';
+import { decodeEventLog, getAddress, type Address, type Log } from 'viem';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { PerformanceLedgerABI } from '../abis/PerformanceLedger';
-import { MirrorReactorABI } from '../abis/MirrorReactor';
 import { vaultIndexer } from '../services/vault-indexer';
 
 export interface DecodedSignalUpdated {
   vault: `0x${string}`;
+  signalHash: `0x${string}`;
   direction: number;
   sizeBps: number;
   stopPrice: bigint;
@@ -29,15 +29,6 @@ export interface DecodedDrawdownUpdated {
   maxDrawdownBps: bigint;
 }
 
-export interface DecodedMirrorExecuted {
-  vault: `0x${string}`;
-  follower: `0x${string}`;
-  direction: number;
-  size: bigint;
-  positionId: `0x${string}`;
-  price: bigint;
-}
-
 export function decodeSignalUpdated(log: Log): DecodedSignalUpdated {
   const decoded = decodeEventLog({
     abi: StrategyVaultABI,
@@ -45,8 +36,10 @@ export function decodeSignalUpdated(log: Log): DecodedSignalUpdated {
     topics: log.topics,
     data: log.data,
   });
+  const signalHash = (log.topics[1] ?? '0x' + '0'.repeat(64)) as `0x${string}`;
   return {
-    vault: log.address as `0x${string}`,
+    vault: getAddress(log.address),
+    signalHash,
     direction: (decoded.args as any).direction,
     sizeBps: (decoded.args as any).sizeBps,
     stopPrice: (decoded.args as any).stopPrice,
@@ -110,33 +103,6 @@ export function decodeTradeSettled(log: Log): DecodedTradeSettled {
     exitPrice: args.exitPrice,
     pnlBps: args.pnl,
     signalHash: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
-  };
-}
-
-export function decodeMirrorExecuted(log: Log): DecodedMirrorExecuted {
-  const decoded = decodeEventLog({
-    abi: MirrorReactorABI,
-    eventName: 'MirrorExecuted',
-    topics: log.topics,
-    data: log.data,
-  });
-  const args = decoded.args as {
-    follower: Address;
-    direction: number;
-    size: bigint;
-    positionId: `0x${string}`;
-    price: bigint;
-  };
-  const vault =
-    vaultIndexer.getAllVaults().find((v) => v.mirrorReactor.toLowerCase() === log.address.toLowerCase())
-      ?.address ?? log.address;
-  return {
-    vault: vault as `0x${string}`,
-    follower: args.follower,
-    direction: args.direction,
-    size: args.size,
-    positionId: args.positionId,
-    price: args.price,
   };
 }
 

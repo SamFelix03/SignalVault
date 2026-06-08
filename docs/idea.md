@@ -95,7 +95,7 @@ StreamPublisher (TypeScript, off-chain, optional)
 
 **1. Open the frontend.** You see a live feed of strategy vaults. Each card shows: current position, live PnL, the last signal's reasoning summary, and a follower count. The cards update in real time via WebSocket — no refresh, because off-chain reactivity is pushing every `SignalUpdated` event straight to the browser.
 
-**2. Open one vault.** You can read the full reasoning trail for the last 10 signals: *"Fetched BTC/USDC at $98,420. Funding rate: +0.087% (elevated, longs paying). Scraped CoinDesk: 'Fed minutes hawkish, macro risk-off.' LLM reasoning: elevated funding suggests crowded long, macro headwind, fear/greed at 28 (extreme fear). Decision: reduce long 60%→30%, tighten stop to $95,000."* Every step is a verifiable agent receipt. Click the receipt hash and see the full chain-of-thought, the exact URLs scraped, the structured extraction, the LLM's intermediate reasoning.
+**2. Open one vault.** You can read the full reasoning trail for the last 10 signals: *"Fetched ETH/USDso at $3,420. Funding rate: +0.087% (elevated, longs paying). Scraped CoinDesk (ETH): 'Ethereum Foundation cuts aren't a crisis, Joe Lubin says.' LLM reasoning: elevated funding suggests crowded long, macro headwind, fear/greed at 28 (extreme fear). Decision: reduce long 60%→30%, tighten stop to $3,320."* Every step is a verifiable agent receipt. Click the receipt hash and see the full chain-of-thought, the exact URLs scraped, the structured extraction, the LLM's intermediate reasoning.
 
 **3. Subscribe as a follower.** Set your risk config: 10% of portfolio, max 2x the signal size, 1% slippage tolerance. Sign once.
 

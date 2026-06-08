@@ -115,8 +115,7 @@ async function main() {
   console.log('1. Update frontend/src/lib/constants.ts and backend/.env with new addresses');
   console.log('2. Run: npx tsx src/scripts/register-subscriptions.ts');
   console.log('3. npx tsx src/scripts/fund-epoch-cron.ts');
-  console.log('4. npx tsx src/scripts/fund-mirror-reactor.ts');
-  console.log('5. npx tsx src/scripts/fund-dex-adapter.ts  (requires USDso + WETH on deployer)');
+  console.log('4. npx tsx src/scripts/subscribe-deployer.ts');
 }
 
 main().catch((err) => {

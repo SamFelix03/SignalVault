@@ -31,13 +31,14 @@ followerRouter.get('/:address/trades', async (req: Request, res: Response) => {
       exitPrice: t.exitPrice,
       pnl: t.pnl,
       pnlPercent: t.pnlPercent,
-      reasoning: '',
+      reasoning: t.reasoningSummary,
       reasoningHash: t.reasoningHash,
       timestamp: t.timestamp,
       txHash: '',
       vaultAddress: t.vaultAddress,
       vaultName: t.vaultName,
       size: t.size,
+      source: t.source,
     }));
 
     res.json({ trades });

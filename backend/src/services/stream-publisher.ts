@@ -6,6 +6,7 @@ import { somniaTestnet } from '../config/chains';
 import { SIGNAL_SCHEMA, PNL_SCHEMA, VAULT_META_SCHEMA } from '../config/schemas';
 import { WS_RPC_URL } from '../config/constants';
 import { vaultIndexer } from './vault-indexer';
+import { mirrorWorker } from './mirror-worker';
 import { logger } from '../utils/logger';
 import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import {
@@ -103,7 +104,6 @@ class StreamPublisher {
     for (const vault of vaults) {
       contractSources.push(vault.address);
       contractSources.push(vault.performanceLedger);
-      contractSources.push(vault.mirrorReactor);
     }
 
     if (contractSources.length === 0) {
@@ -221,6 +221,12 @@ class StreamPublisher {
         reasoningHash: decoded.reasoningHash,
         reasoningSummary: sanitizePipelineText(decoded.reasoningSummary),
         epoch: now.toString(),
+      });
+
+      await mirrorWorker.onSignalUpdated({
+        ...decoded,
+        reasoningSummary: sanitizePipelineText(decoded.reasoningSummary),
+        timestamp: Number(now),
       });
     } catch (err) {
       logger.error(CTX, 'Failed to publish signal', err);

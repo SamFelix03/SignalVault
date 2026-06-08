@@ -10,8 +10,9 @@ import { publicClient } from '../config/chains';
 import { AgentOrchestratorABI } from '../abis/AgentOrchestrator';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { vaultIndexer } from './vault-indexer';
+import { computeOnChainSignalHash } from './mirror-worker';
 import { receiptStore, type Receipt, type ReceiptStage } from './receipt-store';
-import { fetchPipelineFallbackData, type PipelineFallbackData } from './agent-fallback';
+import { fetchPipelineFallbackData, resolveMacroNewsSummary, type PipelineFallbackData } from './agent-fallback';
 import { logger } from '../utils/logger';
 import {
   buildDisplayReasoning,
@@ -100,7 +101,7 @@ async function resolvePipelineInputs(
   fallback?: PipelineFallbackData;
 }> {
   if (!isPlaceholderPipelineData(fearGreed, news)) {
-    return { funding, fearGreed, news };
+    return { funding, fearGreed, news: await resolveMacroNewsSummary(news) };
   }
 
   try {
@@ -330,11 +331,74 @@ async function findRunIdBySignalEpoch(
   return log?.topics[1] ? BigInt(log.topics[1]) : null;
 }
 
+/** Map on-chain signalHash (from mirror trades) to pipeline reasoningHash used by receipts. */
+export async function resolveReceiptLookupHash(
+  hash: string,
+  vaultAddress?: Address,
+): Promise<string> {
+  if (receiptStore.get(hash)) return hash;
+
+  const candidates = vaultAddress
+    ? [vaultIndexer.getVault(vaultAddress)].filter((v) => v != null)
+    : vaultIndexer.getAllVaults();
+
+  for (const vault of candidates) {
+    const reasoningHash = await reasoningHashForSignalHash(vault.address, hash);
+    if (reasoningHash) return reasoningHash;
+  }
+
+  return hash;
+}
+
+async function reasoningHashForSignalHash(
+  vaultAddress: Address,
+  signalHash: string,
+): Promise<string | null> {
+  const length = await publicClient.readContract({
+    address: vaultAddress,
+    abi: StrategyVaultABI,
+    functionName: 'signalHistoryLength',
+  }) as bigint;
+
+  const total = Number(length);
+  if (total === 0) return null;
+
+  const history = await publicClient.readContract({
+    address: vaultAddress,
+    abi: StrategyVaultABI,
+    functionName: 'getSignalHistory',
+    args: [0n, BigInt(total)],
+  }) as unknown as Array<{
+    direction: number;
+    sizeBps: number;
+    stopPrice: bigint;
+    epoch: bigint;
+    reasoningHash: string;
+  }>;
+
+  const normalized = signalHash.toLowerCase();
+  for (const signal of history) {
+    const computed = computeOnChainSignalHash(
+      signal.direction,
+      signal.sizeBps,
+      signal.stopPrice,
+      signal.epoch,
+    );
+    if (computed.toLowerCase() === normalized) {
+      return signal.reasoningHash;
+    }
+  }
+
+  return null;
+}
+
 export async function getOrBuildReceipt(
   reasoningHash: string,
   vaultAddress?: Address,
 ): Promise<Receipt | null> {
-  const cached = receiptStore.get(reasoningHash);
+  const lookupHash = await resolveReceiptLookupHash(reasoningHash, vaultAddress);
+
+  const cached = receiptStore.get(lookupHash);
   if (cached?.reasoningSummary) return cached;
 
   const candidates = vaultAddress
@@ -342,10 +406,10 @@ export async function getOrBuildReceipt(
     : vaultIndexer.getAllVaults();
 
   for (const vault of candidates) {
-    let runId = await findRunIdForReasoningHash(vault.orchestrator, reasoningHash);
+    let runId = await findRunIdForReasoningHash(vault.orchestrator, lookupHash);
 
     if (runId === null) {
-      const epoch = await signalEpochForHash(vault.address, reasoningHash);
+      const epoch = await signalEpochForHash(vault.address, lookupHash);
       if (epoch !== null) {
         runId = await findRunIdBySignalEpoch(vault.orchestrator, epoch);
       }
@@ -357,11 +421,11 @@ export async function getOrBuildReceipt(
       vault.address,
       vault.orchestrator,
       runId,
-      reasoningHash,
+      lookupHash,
     );
 
     receiptStore.store(receipt);
-    logger.info(CTX, `Built receipt ${reasoningHash} for vault ${vault.address} run ${runId}`);
+    logger.info(CTX, `Built receipt ${lookupHash} for vault ${vault.address} run ${runId}`);
     return receipt;
   }
 

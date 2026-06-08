@@ -32,6 +32,16 @@ export function sanitizePipelineText(text: string): string {
   return out.replace(/\s{2,}/g, ' ').replace(/\s+([.,])/g, '$1').trim();
 }
 
+const BITCOIN_NEWS = /\b(bitcoin|btc)\b/i;
+const ETH_NEWS = /\b(ethereum|ether|eth)\b/i;
+
+/** True when headline is primarily about Bitcoin, not Ethereum. */
+export function isBitcoinHeavyNews(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return BITCOIN_NEWS.test(t) && !ETH_NEWS.test(t);
+}
+
 export function buildDisplayReasoning(
   reasoningSummary: string | undefined,
   newsSummary: string,

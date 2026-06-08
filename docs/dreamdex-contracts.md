@@ -36,11 +36,11 @@ All dreamDEX spot markets quote against **USDso**.
 
 ### Testnet (Somnia Shannon, chain ID `50312`)
 
-| Pair                    | SpotPool                                     |
-| ----------------------- | -------------------------------------------- |
-| **SOMI**/USDso (native) | `0x259fD6559214dd5aD3752322426eA9F9fABEFff4` |
-| **WBTC**/USDso          | `0x3605f28aA7C50e7441211e77Cb0762d49539326C` |
-| **WETH**/USDso          | `0xD180195da5459C7a0DEA188ed61216ec43682b50` |
+| Pair                    | SpotPool                                     | Notes                          |
+| ----------------------- | -------------------------------------------- | ------------------------------ |
+| **SOMI**/USDso (native) | `0x259fD6559214dd5aD3752322426eA9F9fABEFff4` | Funding / on-ramp              |
+| **WETH**/USDso          | `0xD180195da5459C7a0DEA188ed61216ec43682b50` | **SignalVault primary pair**   |
+| **WBTC**/USDso          | `0x3605f28aA7C50e7441211e77Cb0762d49539326C` | Legacy / not used by SignalVault |
 
 Per-pair tick / lot / minimum-quantity values are configured at pool initialization and can be queried at any time via the [`GET /v0/markets`](/ld25g222WKDrLlJMcR41/developers/http-api/market-data.md) HTTP endpoint or by calling `getPoolParams()` directly on the SpotPool contract — those calls are the canonical source of truth.
 

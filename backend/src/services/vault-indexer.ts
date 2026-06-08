@@ -1,10 +1,11 @@
-import { type Address, type Log, keccak256, toBytes } from 'viem';
+import { type Address, type Log, getAddress, keccak256, toBytes } from 'viem';
 import { publicClient, config } from '../config/chains';
 import { VaultFactoryABI } from '../abis/VaultFactory';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { logger } from '../utils/logger';
 import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import { eventBus } from './event-bus';
+import { computeOnChainSignalHash, mirrorWorker } from './mirror-worker';
 
 const CTX = 'VaultIndexer';
 
@@ -231,6 +232,23 @@ class VaultIndexer {
 
           if (!prev || prev.epoch !== next.epoch || prev.reasoningHash !== next.reasoningHash) {
             eventBus.emitVaultUpdate(address, { vault: this.vaults.get(address) });
+            const reasoningHash = next.reasoningHash as `0x${string}`;
+            const signalHash = computeOnChainSignalHash(
+              next.direction,
+              next.sizeBps,
+              BigInt(next.stopPrice),
+              BigInt(next.epoch),
+            );
+            mirrorWorker.onSignalUpdated({
+              vault: address,
+              signalHash,
+              direction: next.direction,
+              sizeBps: next.sizeBps,
+              stopPrice: BigInt(next.stopPrice),
+              reasoningHash,
+              reasoningSummary: next.reasoningSummary,
+              timestamp: Number(next.epoch) || Math.floor(Date.now() / 1000),
+            }).catch((err) => logger.error(CTX, 'Mirror worker poll hook failed', err));
           }
         } catch { /* skip failed polls */ }
       }
@@ -254,7 +272,12 @@ class VaultIndexer {
   }
 
   getVault(address: Address): VaultInfo | undefined {
-    return this.vaults.get(address);
+    try {
+      return this.vaults.get(getAddress(address));
+    } catch {
+      const key = address.toLowerCase();
+      return Array.from(this.vaults.values()).find((v) => v.address.toLowerCase() === key);
+    }
   }
 
   getVaultByOrchestrator(orchestratorAddress: Address): VaultInfo | undefined {

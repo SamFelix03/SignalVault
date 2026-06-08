@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/api/server.js",
     "register-schemas": "ts-node scripts/register-schemas.ts",
-    "seed-demo": "ts-node scripts/seed-demo-data.ts"
+    "seed-demo": "ts-node scripts/seed-demo-data.ts",
+    "test": "npx tsx --test src/services/mirror-worker.test.ts",
+    "test:mirror-e2e": "tsx src/scripts/test-follower-mirror-e2e.ts"
   },
   "keywords": [
     "somnia",

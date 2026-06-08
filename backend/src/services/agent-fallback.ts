@@ -3,6 +3,7 @@
  * Uses the same public data sources the orchestrator targets (alternative.me, CoinGecko, CryptoCompare).
  */
 import { logger } from '../utils/logger';
+import { isBitcoinHeavyNews, sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 
 const CTX = 'AgentFallback';
 
@@ -74,7 +75,29 @@ export async function fetchFundingFromCoinGecko(): Promise<{
   return { raw, changePct: change };
 }
 
-/** CoinDesk RSS headlines — same domain the LLM Parse news stage targets */
+const ETH_HEADLINE = /\b(ethereum|ether|eth)\b/i;
+const BITCOIN_HEADLINE = /\b(bitcoin|btc)\b/i;
+
+function parseRssItem(itemBlock: string): { headline: string; description: string } | null {
+  const titleRaw = itemBlock.match(/<title>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]+))<\/title>/i);
+  const descRaw = itemBlock.match(/<description>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]+))<\/description>/i);
+  const headline = (titleRaw?.[1] ?? titleRaw?.[2] ?? '').trim();
+  if (!headline) return null;
+  const description = (descRaw?.[1] ?? descRaw?.[2] ?? '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+  return { headline, description };
+}
+
+function formatNewsSummary(headline: string, description: string): string {
+  return description
+    ? `${headline} — ${description}${description.length >= 200 ? '…' : ''}`
+    : headline;
+}
+
+/** CoinDesk RSS — prefer Ethereum headlines over Bitcoin-only stories */
 export async function fetchMacroNewsSummary(): Promise<{
   headline: string;
   summary: string;
@@ -87,26 +110,49 @@ export async function fetchMacroNewsSummary(): Promise<{
   if (!res.ok) throw new Error(`CoinDesk RSS HTTP ${res.status}`);
 
   const xml = await res.text();
-  const itemBlock = xml.match(/<item>[\s\S]*?<\/item>/i)?.[0];
-  if (!itemBlock) throw new Error('CoinDesk RSS has no items');
+  const itemBlocks = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? [];
+  if (itemBlocks.length === 0) throw new Error('CoinDesk RSS has no items');
 
-  const titleRaw = itemBlock.match(/<title>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]+))<\/title>/i);
-  const descRaw = itemBlock.match(/<description>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]+))<\/description>/i);
+  let fallback: { headline: string; description: string } | null = null;
 
-  const headline = (titleRaw?.[1] ?? titleRaw?.[2] ?? '').trim();
-  if (!headline) throw new Error('CoinDesk RSS item missing title');
+  for (const block of itemBlocks) {
+    const parsed = parseRssItem(block);
+    if (!parsed) continue;
 
-  const description = (descRaw?.[1] ?? descRaw?.[2] ?? '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 200);
+    const { headline, description } = parsed;
+    const ethRelated = ETH_HEADLINE.test(headline);
+    const bitcoinOnly = BITCOIN_HEADLINE.test(headline) && !ethRelated;
 
-  const summary = description
-    ? `${headline} — ${description}${description.length >= 200 ? '…' : ''}`
-    : headline;
+    if (bitcoinOnly) continue;
+    if (!fallback) fallback = parsed;
+    if (ethRelated) {
+      return {
+        headline,
+        summary: formatNewsSummary(headline, description),
+        source: 'CoinDesk RSS (ETH)',
+      };
+    }
+  }
 
-  return { headline, summary, source: 'CoinDesk RSS' };
+  if (!fallback) throw new Error('CoinDesk RSS has no ETH-suitable headlines');
+  return {
+    headline: fallback.headline,
+    summary: formatNewsSummary(fallback.headline, fallback.description),
+    source: 'CoinDesk RSS',
+  };
+}
+
+/** Replace Bitcoin-only agent headlines with ETH-focused macro news for display + fallback finalize */
+export async function resolveMacroNewsSummary(raw: string): Promise<string> {
+  const cleaned = sanitizePipelineText(raw);
+  if (!cleaned || !isBitcoinHeavyNews(cleaned)) return cleaned;
+  try {
+    const eth = await fetchMacroNewsSummary();
+    return eth.summary;
+  } catch (err) {
+    logger.warn(CTX, 'ETH news fallback failed', err);
+    return cleaned;
+  }
 }
 
 /**

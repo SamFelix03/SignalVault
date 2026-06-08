@@ -126,7 +126,7 @@ Each primitive is described here with its documentation reference, the specific 
 **What it does:** Fetches any public HTTP JSON endpoint and extracts a typed value using a JSON-path selector. Typed variants: `fetchUint`, `fetchString`, `fetchAddress`, `fetchArray`. Each of 3 elected validators independently performs the fetch; consensus is reached when a majority returns identical results.
 
 **How SignalVault uses it:**
-- Stage 1a: `fetchUint` → Binance/Coinbase API for BTC/ETH spot price (8 decimals)
+- Stage 1a: On-chain Protofire ETH/USD oracle + CoinGecko `ethereum` spot (8 decimals)
 - Stage 1b: `fetchUint` → Exchange funding rate endpoint (signed integer, basis points)
 - Stage 1c: `fetchUint` → Open interest from Coinglass or exchange API
 
@@ -142,7 +142,7 @@ interface IJsonApiAgent {
 
 bytes memory payload = abi.encodeWithSelector(
     IJsonApiAgent.fetchUint.selector,
-    "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT",
+    "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
     "price",
     uint8(2)
 );
@@ -180,7 +180,7 @@ Receipt includes: source URL, extracted markdown snippet, LLM reasoning, `answer
 
 **How SignalVault uses it:**
 - Stage 2a: Search mode on `alternative.me` for Fear & Greed index value (no clean API, JS-rendered)
-- Stage 2b: Direct mode on configured news source (e.g., `coindesk.com/tag/bitcoin`) for headline sentiment; returns `ExtractString` with a 1-sentence macro summary
+- Stage 2b: Direct mode on configured news source (`coindesk.com/tag/ethereum`) for ETH macro headline sentiment; returns `ExtractString` with a 1-sentence macro summary
 
 **Why this stage matters:** A strategy agent without macro context is a pure price-follower. The LLM Parse Website stage is what elevates the agent from a statistical bot to a context-aware reasoner. The Fear & Greed value + headline summary are fed as context into Stage 3 (inferToolsChat). This is the step that has no analogue on any other chain.
 
@@ -226,7 +226,7 @@ Given the current market state, decide the optimal position and call the appropr
 User message template (assembled by `AgentOrchestrator.sol`):
 ```
 Current market state:
-- BTC/USDT spot: $[price]
+- ETH/USDT spot: $[price]
 - Funding rate: [fundingRate]% (positive = longs paying)
 - Open interest: $[oi]B
 - Fear & Greed Index: [fng] ([sentiment])
@@ -384,7 +384,7 @@ await sdk.subscribe({
 ### 5.8 Protofire / DIA Price Feeds (Oracle Integration)
 
 **Documentation:** https://docs.somnia.network/developer/building-dapps/oracles/protofire-price-feeds  
-**Protofire BTC/USD proxy:** `0xa57d637618252669fD859B1F4C7bE6F52Bef67ed`  
+**Protofire ETH/USD proxy (testnet):** `0xd9132c1d762D432672493F640a63B758891B449e`  
 **Protofire ETH/USD proxy:** `0xeC25a820A6F194118ef8274216a7F225Da019526`
 
 **How SignalVault uses it:** The `PerformanceLedger` contract uses the Protofire oracle to mark positions to market for PnL calculation. This is independent of the agent's price fetch — the ledger uses the onchain oracle (which is Chainlink-compatible AggregatorV3 interface) as an authoritative settlement price, while the agent's JSON API fetch is used for signal generation context.
@@ -620,10 +620,10 @@ function startPipeline() external payable onlyVaultOrCron {
     PipelineRun storage run = runs[runId];
     run.runId = runId;
 
-    // Stage 1a: BTC/ETH price
+    // Stage 1a: ETH price (oracle + CoinGecko)
     bytes memory pricePayload = abi.encodeWithSelector(
         IJsonApiAgent.fetchUint.selector,
-        "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT",
+        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
         "price",
         uint8(2)
     );
@@ -637,7 +637,7 @@ function startPipeline() external payable onlyVaultOrCron {
     // Stage 1b: Funding rate (parallel)
     bytes memory fundingPayload = abi.encodeWithSelector(
         IJsonApiAgent.fetchUint.selector,
-        "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=1",
+        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true",
         "0.fundingRate",
         uint8(8)
     );
@@ -683,7 +683,7 @@ function _fireStage3(uint256 runId) internal {
 
     string memory userMessage = string.concat(
         "Current market state:\n",
-        "- BTC/USDT: $", Strings.toString(run.price / 100), "\n",
+        "- ETH/USDT: $", Strings.toString(run.price / 100), "\n",
         "- Funding rate: ", _formatRate(run.fundingRate), "% (positive = longs paying)\n",
         "- Fear & Greed: ", Strings.toString(run.fngIndex), "\n",
         "- Macro: ", run.macroSummary, "\n",
@@ -1187,7 +1187,7 @@ T+5-15s  createRequest(LLM_PARSE, fearGreedPayload)    requestId_2a
 
 T+20-30s Validator consensus on LLM Parse requests
          → handleParseResponse(requestId_2a)  → run.fngIndex = 27, fngLabel = "Fear"
-         → handleNewsResponse(requestId_2b)   → run.macroSummary = "Bitcoin faces..."
+         → handleNewsResponse(requestId_2b)   → run.macroSummary = "Ethereum faces..."
          (when both ready: _fireStage3())
 
 T+30-45s Assemble full context prompt
@@ -1331,7 +1331,7 @@ Summary of all subscriptions created per vault:
 This section describes the exact live demo sequence, step by step, suitable for a 7-minute conference or hackathon presentation.
 
 ### Setup (before demo, done in advance)
-- One vault deployed with strategy: "BTC momentum, max 25% position, exit above 0.1% funding"
+- One vault deployed with strategy: "ETH momentum on WETH:USDso, max 25% position, exit above 0.1% funding"
 - Vault has 3 days of signal history with reasoning trails
 - Three follower wallets pre-subscribed with different risk configs (5%, 10%, 15%)
 - `StreamPublisher` running, Data Streams populated with 72 signal records
@@ -1367,7 +1367,7 @@ Click "View Audit Trail" on the SHORT signal.
 
 Show the full audit page for the SHORT signal. Walk through the three stages:
 
-**Stage 1 (JSON API):** "The agent called Binance's API and got BTC at $98,847. It called the funding endpoint: +0.092%. Three validators independently called these endpoints and all got the same numbers — that's how consensus works."
+**Stage 1 (JSON API):** "The agent read the Protofire ETH/USD oracle at $3,420 and CoinGecko 24h change at +0.92%. Three validators independently called these endpoints and all got the same numbers — that's how consensus works."
 
 **Stage 2 (LLM Parse Website):** "The agent browsed Alternative.me — a JavaScript-rendered page — and extracted Fear & Greed: 24, labelled 'Extreme Fear'. Confidence: 97/100. No API for this exists — the agent used a real browser."
 
@@ -1388,7 +1388,7 @@ Watch the agent pipeline status bar appear in the UI (populated by `PipelineStar
 
 ```
 [●●●○] Stage 1: Fetching price, funding rate, open interest...
-[●●●●] Stage 1 complete: BTC $99,102 | Funding +0.041% | OI $18.4B
+[●●●●] Stage 1 complete: ETH $3,420 | Funding +0.041% | Fear/Greed 28
 [●●●○] Stage 2: Scraping Fear & Greed...
 [●●●●] Stage 2 complete: F&G 31 (Fear) | Headline: "ETF outflows slow..."
 [●●●○] Stage 3: LLM reasoning...
@@ -1485,7 +1485,7 @@ RPC HTTP:          https://mainnet-rpc.somnia.network (verify current via docs)
 Explorer:          https://somniascan.io
 Native currency:   SOMI
 AgentRequester:    0x5E5205CF39E766118C01636bED000A54D93163E6
-Protofire BTC/USD: 0xa57d637618252669fD859B1F4C7bE6F52Bef67ed
+Protofire ETH/USD (testnet): 0xd9132c1d762D432672493F640a63B758891B449e
 Protofire ETH/USD: 0xeC25a820A6F194118ef8274216a7F225Da019526
 ```
 

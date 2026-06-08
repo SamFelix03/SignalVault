@@ -351,7 +351,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
             "A one-sentence summary of the current Ethereum/crypto macro sentiment from recent headlines", // description
             options,                                                     // no constrained options
             "Ethereum crypto market sentiment macro outlook latest news",  // prompt
-            "coindesk.com",                                              // url (domain search)
+            "coindesk.com/tag/ethereum",                                 // url (ETH macro headlines)
             true,                                                        // resolveUrl
             uint8(2),                                                    // numPages
             uint8(50)                                                    // confidenceThreshold

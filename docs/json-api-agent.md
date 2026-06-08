@@ -68,13 +68,13 @@ const abi = [{
   outputs: [{ name: 'result', type: 'uint256' }]
 }];
 
-// Fetch Bitcoin price with 8 decimal places
+// Fetch Ethereum price with 8 decimal places
 const calldata = encodeFunctionData({
   abi,
   functionName: 'fetchUint',
   args: [
-    'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
-    'bitcoin.usd',
+    'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+    'ethereum.usd',
     8
   ]
 });
