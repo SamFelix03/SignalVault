@@ -142,10 +142,83 @@ contract AgentOrchestrator is IAgentRequesterHandler {
             run.flags |= 4;
         }
         if (bytes(run.newsSummary).length == 0) {
-            run.newsSummary = "Macro context unavailable";
+            run.newsSummary = string(abi.encodePacked(
+                "Agents timed out after ",
+                _uint2str(PIPELINE_TIMEOUT),
+                "s. BTC $",
+                _uint2str(run.fetchedPrice / 100),
+                ".",
+                _pad2(run.fetchedPrice % 100),
+                ", Fear/Greed ",
+                _uint2str(run.fearGreedIndex),
+                "/100 - rule-based completion."
+            ));
         }
 
         _completeRunWithRuleBasedSignal(runId);
+    }
+
+    /// @notice Complete a stale run using off-chain HTTP fallback data (alternative.me, CoinGecko, etc.)
+    /// @dev Callable after PIPELINE_TIMEOUT; fills missing parse stages before rule-based signal.
+    function finalizeStaleRunWithFallback(
+        uint256 runId,
+        uint256 fearGreedIndex,
+        uint256 fetchedFunding,
+        string calldata newsSummary
+    ) external nonReentrant {
+        require(runId > 0 && runId <= currentRunId, "invalid run");
+        PipelineRun storage run = runs[runId];
+        require((run.flags & 8) == 0, "already completed");
+        require(block.timestamp >= run.startedAt + PIPELINE_TIMEOUT, "not stale yet");
+        require(fearGreedIndex <= 100, "invalid fear/greed");
+        require(bytes(newsSummary).length > 0, "empty news");
+
+        if (run.fetchedPrice == 0) {
+            run.fetchedPrice = _readOraclePriceCents();
+            run.flags |= 1;
+        }
+        if ((run.flags & 2) == 0 && fetchedFunding > 0) {
+            run.fetchedFunding = fetchedFunding;
+            run.flags |= 2;
+        } else if ((run.flags & 2) == 0) {
+            run.fetchedFunding = run.fetchedPrice > 0 ? (run.fetchedPrice * 5) / 1000 : 0;
+            run.flags |= 2;
+        }
+        run.fearGreedIndex = fearGreedIndex;
+        run.flags |= 4;
+        if (fetchedFunding > 0) {
+            run.fetchedFunding = fetchedFunding;
+            run.flags |= 2;
+        }
+        run.newsSummary = newsSummary;
+
+        _completeRunWithRuleBasedSignal(runId);
+    }
+
+    /// @notice Inject real fallback data mid-run when agents are slow (before timeout finalize)
+    function injectFallbackPipelineData(
+        uint256 runId,
+        uint256 fearGreedIndex,
+        uint256 fetchedFunding,
+        string calldata newsSummary
+    ) external {
+        require(runId > 0 && runId <= currentRunId, "invalid run");
+        PipelineRun storage run = runs[runId];
+        require((run.flags & 8) == 0, "completed");
+        require(block.timestamp >= run.startedAt + (PIPELINE_TIMEOUT / 2), "too early");
+        require(fearGreedIndex <= 100, "invalid fear/greed");
+
+        if ((run.flags & 2) == 0 && fetchedFunding > 0) {
+            run.fetchedFunding = fetchedFunding;
+            run.flags |= 2;
+        }
+        if ((run.flags & 4) == 0) {
+            run.fearGreedIndex = fearGreedIndex;
+            run.flags |= 4;
+        }
+        if (_isPlaceholderNews(run.newsSummary) && bytes(newsSummary).length > 0) {
+            run.newsSummary = newsSummary;
+        }
     }
 
     // ── Stage 1a: On-chain oracle — BTC Price ───────────────────────────
@@ -307,7 +380,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
 
         if (status == ResponseStatus.Success && responses.length > 0) {
             run.newsSummary = abi.decode(responses[0].result, (string));
-        } else {
+        } else if (_isPlaceholderNews(run.newsSummary)) {
             run.newsSummary = "News unavailable";
         }
 
@@ -568,6 +641,12 @@ contract AgentOrchestrator is IAgentRequesterHandler {
             "/100. ",
             run.newsSummary
         ));
+    }
+
+  function _isPlaceholderNews(string memory summary) internal pure returns (bool) {
+        if (bytes(summary).length == 0) return true;
+        return keccak256(bytes(summary)) == keccak256(bytes("News unavailable"))
+            || keccak256(bytes(summary)) == keccak256(bytes("Macro context unavailable"));
     }
 
     function _pad2(uint256 value) internal pure returns (string memory) {

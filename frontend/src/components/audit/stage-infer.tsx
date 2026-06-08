@@ -9,8 +9,10 @@ interface StageInferProps {
 }
 
 export function StageInfer({ data }: StageInferProps) {
+  const title = data.ruleBased ? 'Rule-Based Signal' : 'LLM inferToolsChat'
+
   return (
-    <StageCard title="LLM inferToolsChat" stageNumber={3} icon={<Brain className="h-4 w-4" />}>
+    <StageCard title={title} stageNumber={3} icon={<Brain className="h-4 w-4" />}>
       <div className="space-y-4">
         <div>
           <p className="mb-1 text-xs font-medium text-muted-foreground">System Prompt</p>

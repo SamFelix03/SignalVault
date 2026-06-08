@@ -31,6 +31,11 @@ function toAgentReceipt(receipt: Receipt) {
   const fundingStage = receipt.stages.find((s) => s.stage.includes('funding'));
   const fngStage = receipt.stages.find((s) => s.stage.includes('fear'));
   const newsStage = receipt.stages.find((s) => s.stage.includes('news'));
+  const newsSummary = String((newsStage?.result as { summary?: string })?.summary ?? '');
+  const ruleBased = receipt.ruleBased ?? newsSummary.includes('Macro context unavailable');
+
+  const fngResult = fngStage?.result as { fearGreedIndex?: string } | undefined;
+  const priceResult = priceStage?.result as { price?: string } | undefined;
 
   return {
     hash: receipt.hash,
@@ -42,24 +47,29 @@ function toAgentReceipt(receipt: Receipt) {
       jsonApi: priceStage ? {
         url: priceStage.url,
         rawResult: priceStage.result,
-        extractedValue: String((priceStage.result as { price?: string })?.price ?? ''),
+        extractedValue: String(priceResult?.price ?? ''),
         validators: priceStage.validators,
       } : undefined,
       parseWebsite: fngStage ? {
         url: fngStage.url,
         markdownSnippet: JSON.stringify(fngStage.result),
-        confidence: 90,
+        confidence: fngStage.confidence ?? 90,
         answerable: true,
       } : undefined,
-      inferToolsChat: newsStage ? {
-        systemPrompt: 'Strategy agent inference',
+      inferToolsChat: (newsStage || receipt.reasoningSummary) ? {
+        systemPrompt: ruleBased
+          ? 'Rule-based completion with HTTP fallback data (alternative.me, CoinGecko, CryptoCompare) — Somnia agents did not finish in time.'
+          : 'Strategy agent inference',
         userMessage: JSON.stringify({
+          price: priceResult?.price,
           funding: fundingStage?.result,
-          fearGreed: fngStage?.result,
-        }),
-        chainOfThought: String((newsStage.result as { summary?: string })?.summary ?? ''),
+          fearGreed: fngResult,
+          macroHeadline: newsSummary,
+        }, null, 2),
+        chainOfThought: receipt.reasoningSummary ?? newsSummary,
         toolCalled: 'updateSignal',
         toolArguments: {},
+        ruleBased,
       } : undefined,
     },
   };

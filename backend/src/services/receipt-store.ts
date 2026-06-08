@@ -12,6 +12,8 @@ export interface ReceiptStage {
   result: unknown;
   validators: string[];
   consensus: boolean;
+  fallbackSource?: 'http' | 'somnia';
+  confidence?: number;
 }
 
 export interface Receipt {
@@ -23,6 +25,8 @@ export interface Receipt {
   orchestrator?: string;
   runId?: number;
   txHash?: string;
+  reasoningSummary?: string;
+  ruleBased?: boolean;
 }
 
 class ReceiptStore {

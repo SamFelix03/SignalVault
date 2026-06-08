@@ -11,9 +11,113 @@ import { AgentOrchestratorABI } from '../abis/AgentOrchestrator';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { vaultIndexer } from './vault-indexer';
 import { receiptStore, type Receipt, type ReceiptStage } from './receipt-store';
+import { fetchPipelineFallbackData, type PipelineFallbackData } from './agent-fallback';
 import { logger } from '../utils/logger';
 
 const CTX = 'ReceiptBuilder';
+
+const PLACEHOLDER_NEWS = [
+  'Macro context unavailable',
+  'News unavailable',
+  'Agents timed out',
+  'rule-based completion',
+];
+
+function isPlaceholderPipelineData(fearGreed: bigint, news: string): boolean {
+  return PLACEHOLDER_NEWS.some((p) => news.includes(p));
+}
+
+function buildStages(
+  price: bigint,
+  funding: bigint,
+  fearGreed: bigint,
+  news: string,
+  fallback?: PipelineFallbackData,
+): ReceiptStage[] {
+  const fngUrl = fallback?.sources.fearGreed ?? 'https://api.alternative.me/fng/';
+  const fundingUrl = fallback?.sources.funding ?? 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin';
+  const newsUrl = fallback?.sources.news ?? 'https://www.coindesk.com/arc/outboundfeeds/rss/';
+
+  return [
+    {
+      stage: 'json_api_price',
+      type: 'oracle',
+      url: 'protofire BTC/USD oracle',
+      result: { price: price.toString() },
+      validators: [],
+      consensus: true,
+      fallbackSource: 'somnia',
+    },
+    {
+      stage: 'json_api_funding',
+      type: 'json_api',
+      url: fundingUrl,
+      result: {
+        funding: funding.toString(),
+        changePct: fallback?.fundingChangePct,
+      },
+      validators: [],
+      consensus: true,
+      fallbackSource: fallback ? 'http' : 'somnia',
+    },
+    {
+      stage: 'fear_greed',
+      type: 'llm_parse',
+      url: fngUrl,
+      result: {
+        fearGreedIndex: fearGreed.toString(),
+        classification: fallback?.fearGreedClassification,
+      },
+      validators: [],
+      consensus: true,
+      fallbackSource: fallback ? 'http' : 'somnia',
+      confidence: fallback?.parseConfidence ?? 90,
+    },
+    {
+      stage: 'news',
+      type: 'llm_parse',
+      url: newsUrl,
+      result: {
+        summary: news,
+        headline: fallback?.newsHeadline,
+        source: fallback?.newsSource,
+      },
+      validators: [],
+      consensus: true,
+      fallbackSource: fallback ? 'http' : 'somnia',
+      confidence: fallback?.parseConfidence ?? 85,
+    },
+  ];
+}
+
+async function resolvePipelineInputs(
+  price: bigint,
+  funding: bigint,
+  fearGreed: bigint,
+  news: string,
+): Promise<{
+  funding: bigint;
+  fearGreed: bigint;
+  news: string;
+  fallback?: PipelineFallbackData;
+}> {
+  if (!isPlaceholderPipelineData(fearGreed, news)) {
+    return { funding, fearGreed, news };
+  }
+
+  try {
+    const fallback = await fetchPipelineFallbackData();
+    return {
+      funding: funding > 0n ? funding : fallback.fetchedFunding,
+      fearGreed: BigInt(fallback.fearGreedIndex),
+      news: fallback.newsSummary,
+      fallback,
+    };
+  } catch (err) {
+    logger.warn(CTX, 'HTTP fallback enrichment failed', err);
+    return { funding, fearGreed, news };
+  }
+}
 
 export function ruleBasedReasoningHash(
   price: bigint,
@@ -32,48 +136,6 @@ export function llmReasoningHash(
   return keccak256(
     encodePacked(['uint256', 'uint256', 'uint256', 'string'], [price, funding, fearGreed, response]),
   );
-}
-
-function buildStages(
-  price: bigint,
-  funding: bigint,
-  fearGreed: bigint,
-  news: string,
-): ReceiptStage[] {
-  return [
-    {
-      stage: 'json_api_price',
-      type: 'oracle',
-      url: 'protofire BTC/USD oracle',
-      result: { price: price.toString() },
-      validators: [],
-      consensus: true,
-    },
-    {
-      stage: 'json_api_funding',
-      type: 'json_api',
-      url: 'coingecko 24h change',
-      result: { funding: funding.toString() },
-      validators: [],
-      consensus: true,
-    },
-    {
-      stage: 'fear_greed',
-      type: 'llm_parse',
-      url: 'alternative.me',
-      result: { fearGreedIndex: fearGreed.toString() },
-      validators: [],
-      consensus: true,
-    },
-    {
-      stage: 'news',
-      type: 'llm_parse',
-      url: 'coindesk.com',
-      result: { summary: news },
-      validators: [],
-      consensus: true,
-    },
-  ];
 }
 
 export async function findRunIdForReasoningHash(
@@ -162,7 +224,22 @@ async function findPipelineCompletedLog(
   };
 }
 
-async function signalEpochForHash(vaultAddress: Address, reasoningHash: string): Promise<number | null> {
+const RULE_BASED_NEWS_MARKERS = ['Macro context unavailable', 'News unavailable'];
+
+function isRuleBasedNews(news: string): boolean {
+  return RULE_BASED_NEWS_MARKERS.some((m) => news.includes(m));
+}
+
+async function signalForHash(
+  vaultAddress: Address,
+  reasoningHash: string,
+): Promise<{
+  epoch: number;
+  reasoningSummary: string;
+  direction: number;
+  sizeBps: number;
+  stopPrice: string;
+} | null> {
   const length = await publicClient.readContract({
     address: vaultAddress,
     abi: StrategyVaultABI,
@@ -177,10 +254,30 @@ async function signalEpochForHash(vaultAddress: Address, reasoningHash: string):
     abi: StrategyVaultABI,
     functionName: 'getSignalHistory',
     args: [0n, BigInt(total)],
-  }) as unknown as Array<{ reasoningHash: string; epoch: bigint }>;
+  }) as unknown as Array<{
+    reasoningHash: string;
+    epoch: bigint;
+    reasoningSummary: string;
+    direction: number;
+    sizeBps: number;
+    stopPrice: bigint;
+  }>;
 
   const match = history.find((s) => s.reasoningHash.toLowerCase() === reasoningHash.toLowerCase());
-  return match ? Number(match.epoch) : null;
+  if (!match) return null;
+
+  return {
+    epoch: Number(match.epoch),
+    reasoningSummary: match.reasoningSummary,
+    direction: Number(match.direction),
+    sizeBps: Number(match.sizeBps),
+    stopPrice: match.stopPrice.toString(),
+  };
+}
+
+async function signalEpochForHash(vaultAddress: Address, reasoningHash: string): Promise<number | null> {
+  const signal = await signalForHash(vaultAddress, reasoningHash);
+  return signal?.epoch ?? null;
 }
 
 export async function buildReceiptFromRun(
@@ -189,29 +286,37 @@ export async function buildReceiptFromRun(
   runId: bigint,
   reasoningHash: string,
 ): Promise<Receipt> {
-  const [price, funding, fearGreed, news] = await publicClient.readContract({
+  const [price, fundingRaw, fearGreedRaw, newsRaw] = await publicClient.readContract({
     address: orchestrator,
     abi: AgentOrchestratorABI,
     functionName: 'getPipelineData',
     args: [runId],
   }) as [bigint, bigint, bigint, string];
 
-  const signalEpoch = await signalEpochForHash(vaultAddress, reasoningHash);
+  const resolved = await resolvePipelineInputs(price, fundingRaw, fearGreedRaw, newsRaw);
+
+  const signal = await signalForHash(vaultAddress, reasoningHash);
   const completion = await findPipelineCompletedLog(
     orchestrator,
     runId,
-    signalEpoch ?? undefined,
+    signal?.epoch ?? undefined,
   );
+
+  const ruleBased = isRuleBasedNews(newsRaw)
+    || (signal?.reasoningSummary?.startsWith('Rule-based signal:') ?? false)
+    || resolved.fallback != null;
 
   return {
     hash: reasoningHash,
     vaultAddress,
     orchestrator,
     runId: Number(runId),
-    epoch: signalEpoch ?? Number(runId),
-    blockNumber: completion ? Number(completion.blockNumber) : (signalEpoch ?? 0),
+    epoch: signal?.epoch ?? Number(runId),
+    blockNumber: completion ? Number(completion.blockNumber) : (signal?.epoch ?? 0),
     txHash: completion?.txHash,
-    stages: buildStages(price, funding, fearGreed, news),
+    reasoningSummary: signal?.reasoningSummary,
+    ruleBased,
+    stages: buildStages(price, resolved.funding, resolved.fearGreed, resolved.news, resolved.fallback),
   };
 }
 
@@ -239,7 +344,7 @@ export async function getOrBuildReceipt(
   vaultAddress?: Address,
 ): Promise<Receipt | null> {
   const cached = receiptStore.get(reasoningHash);
-  if (cached) return cached;
+  if (cached?.reasoningSummary) return cached;
 
   const candidates = vaultAddress
     ? [vaultIndexer.getVault(vaultAddress)].filter((v) => v != null)

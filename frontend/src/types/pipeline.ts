@@ -58,4 +58,6 @@ export interface StageInferToolsChat {
   chainOfThought: string
   toolCalled: string
   toolArguments: Record<string, unknown>
+  /** Set when pipeline completed via rule-based fallback after agent timeout */
+  ruleBased?: boolean
 }

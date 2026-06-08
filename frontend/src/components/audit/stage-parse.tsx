@@ -9,7 +9,14 @@ interface StageParseProps {
   data: StageParseType
 }
 
+/** Confidence is stored as 0–100 in receipts; mock data may use the same scale. */
+function confidencePercent(confidence: number): number {
+  return confidence > 1 ? Math.min(confidence, 100) : confidence * 100
+}
+
 export function StageParse({ data }: StageParseProps) {
+  const confidencePct = confidencePercent(data.confidence)
+
   return (
     <StageCard title="LLM Parse Website" stageNumber={2} icon={<FileText className="h-4 w-4" />}>
       <div className="space-y-4">
@@ -33,12 +40,12 @@ export function StageParse({ data }: StageParseProps) {
                 <div
                   className={cn(
                     'h-full rounded-full transition-all',
-                    data.confidence >= 0.8 ? 'bg-success' : data.confidence >= 0.5 ? 'bg-warning' : 'bg-destructive'
+                    confidencePct >= 80 ? 'bg-success' : confidencePct >= 50 ? 'bg-warning' : 'bg-destructive'
                   )}
-                  style={{ width: `${data.confidence * 100}%` }}
+                  style={{ width: `${confidencePct}%` }}
                 />
               </div>
-              <span className="font-mono text-sm text-foreground">{(data.confidence * 100).toFixed(0)}%</span>
+              <span className="font-mono text-sm text-foreground">{confidencePct.toFixed(0)}%</span>
             </div>
           </div>
 

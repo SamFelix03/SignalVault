@@ -43,4 +43,28 @@ export const AgentOrchestratorABI = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
+  {
+    type: 'function',
+    name: 'finalizeStaleRunWithFallback',
+    inputs: [
+      { name: 'runId', type: 'uint256' },
+      { name: 'fearGreedIndex', type: 'uint256' },
+      { name: 'fetchedFunding', type: 'uint256' },
+      { name: 'newsSummary', type: 'string' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'injectFallbackPipelineData',
+    inputs: [
+      { name: 'runId', type: 'uint256' },
+      { name: 'fearGreedIndex', type: 'uint256' },
+      { name: 'fetchedFunding', type: 'uint256' },
+      { name: 'newsSummary', type: 'string' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
 ] as const;
