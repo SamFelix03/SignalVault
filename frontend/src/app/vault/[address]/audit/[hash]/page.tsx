@@ -48,7 +48,7 @@ export default function AuditPage({ params }: { params: Promise<{ address: strin
         if (!r.ok) throw new Error(`Failed to fetch receipt: ${r.statusText}`)
         return r.json()
       })
-      .then(setReceipt)
+      .then((d) => setReceipt(d.stages ? d : d.receipt ?? d))
       .catch(err => setError(err.message))
       .finally(() => setIsLoading(false))
   }, [hash])

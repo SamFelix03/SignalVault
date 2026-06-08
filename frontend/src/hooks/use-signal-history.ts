@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { API_URL } from '@/lib/contracts'
+import { useState, useEffect } from 'react'
+import { type Address } from 'viem'
+import { useReadContract } from 'wagmi'
+import { vaultConfig } from '@/lib/contracts'
 import { isMockMode } from '@/lib/mock-mode'
 import { getMockSignals } from '@/lib/mock-data'
 import type { Signal } from '@/types/vault'
@@ -13,32 +15,64 @@ export function useSignalHistory(vaultAddress: string) {
   const [isLoading, setIsLoading] = useState(!isMockMode())
   const [error, setError] = useState<Error | null>(null)
 
-  const fetchSignals = useCallback(async () => {
+  const { data: historyLength } = useReadContract({
+    ...vaultConfig(vaultAddress as Address),
+    functionName: 'signalHistoryLength',
+    query: {
+      enabled: !isMockMode(),
+      refetchInterval: 15_000,
+    },
+  })
+
+  const limit = Math.min(Number(historyLength ?? 0), 20)
+  const offset = Math.max(Number(historyLength ?? 0) - limit, 0)
+
+  const { data: historyData } = useReadContract({
+    ...vaultConfig(vaultAddress as Address),
+    functionName: 'getSignalHistory',
+    args: [BigInt(offset), BigInt(limit)],
+    query: {
+      enabled: !isMockMode() && limit > 0,
+      refetchInterval: 15_000,
+    },
+  })
+
+  useEffect(() => {
     if (isMockMode()) {
       setSignals(getMockSignals(vaultAddress))
       setIsLoading(false)
-      setError(null)
       return
     }
 
-    try {
-      const res = await fetch(`${API_URL}/api/vaults/${vaultAddress}/signals`)
-      if (!res.ok) throw new Error(`Failed to fetch signals: ${res.statusText}`)
-      const data = await res.json()
-      setSignals(data.signals ?? data ?? [])
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('Unknown error'))
-    } finally {
-      setIsLoading(false)
-    }
-  }, [vaultAddress])
+    if (historyData) {
+      try {
+        const raw = historyData as readonly {
+          direction: number
+          sizeBps: number
+          stopPrice: bigint
+          epoch: bigint
+          reasoningHash: `0x${string}`
+          reasoningSummary: string
+        }[]
 
-  useEffect(() => {
-    fetchSignals()
-    const interval = setInterval(fetchSignals, 15_000)
-    return () => clearInterval(interval)
-  }, [fetchSignals])
+        const mapped: Signal[] = raw.map(s => ({
+          direction: Number(s.direction),
+          sizeBps: Number(s.sizeBps),
+          stopPrice: s.stopPrice,
+          epoch: Number(s.epoch),
+          reasoningHash: s.reasoningHash,
+          reasoning: s.reasoningSummary || undefined,
+          timestamp: 0,
+        })).reverse()
+
+        setSignals(mapped)
+        setError(null)
+      } catch (err) {
+        setError(err instanceof Error ? err : new Error('Failed to parse signal history'))
+      }
+    }
+    setIsLoading(false)
+  }, [historyData, vaultAddress])
 
   return { signals, isLoading, error }
 }

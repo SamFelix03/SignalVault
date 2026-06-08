@@ -3,6 +3,7 @@ import { type Address, getAddress } from 'viem';
 import { publicClient } from '../../config/chains';
 import { vaultIndexer } from '../../services/vault-indexer';
 import { PerformanceLedgerABI } from '../../abis/PerformanceLedger';
+import { StrategyVaultABI } from '../../abis/StrategyVault';
 import { logger } from '../../utils/logger';
 
 const CTX = 'VaultRoutes';
@@ -41,14 +42,103 @@ vaultRouter.get('/:address', (req: Request, res: Response) => {
   }
 });
 
-vaultRouter.get('/:address/signals', (req: Request, res: Response) => {
+vaultRouter.get('/:address/signals', async (req: Request, res: Response) => {
   try {
     const address = getAddress(req.params.address as string) as Address;
-    const signals = vaultIndexer.getVaultSignals(address);
+    const cached = vaultIndexer.getVaultSignals(address);
+
+    const length = await publicClient.readContract({
+      address,
+      abi: StrategyVaultABI,
+      functionName: 'signalHistoryLength',
+    }) as bigint;
+
+    const total = Number(length);
+    if (total === 0) {
+      res.json({ signals: cached });
+      return;
+    }
+
+    const limit = Math.min(total, 10);
+    const offset = total > 10 ? total - 10 : 0;
+    const history = await publicClient.readContract({
+      address,
+      abi: StrategyVaultABI,
+      functionName: 'getSignalHistory',
+      args: [BigInt(offset), BigInt(limit)],
+    }) as Array<{
+      direction: number; sizeBps: number; stopPrice: bigint;
+      epoch: bigint; reasoningHash: string; reasoningSummary: string;
+    }>;
+
+    const signals = history.map((s) => ({
+      direction: Number(s.direction),
+      sizeBps: Number(s.sizeBps),
+      stopPrice: s.stopPrice.toString(),
+      epoch: s.epoch.toString(),
+      reasoningHash: s.reasoningHash,
+      reasoningSummary: s.reasoningSummary,
+    })).reverse();
+
     res.json({ signals });
   } catch (err) {
     logger.error(CTX, 'Failed to get signals', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+vaultRouter.get('/:address/pnl', async (req: Request, res: Response) => {
+  try {
+    const address = getAddress(req.params.address as string) as Address;
+    const vault = vaultIndexer.getVault(address);
+    if (!vault) {
+      res.status(404).json({ error: 'Vault not found' });
+      return;
+    }
+
+    const tradeCount = await publicClient.readContract({
+      address: vault.performanceLedger,
+      abi: PerformanceLedgerABI,
+      functionName: 'getTradeCount',
+    }) as bigint;
+
+    const limit = Math.min(Number(tradeCount), 50);
+    let trades: any[] = [];
+    if (limit > 0) {
+      const offset = Number(tradeCount) > 50 ? Number(tradeCount) - 50 : 0;
+      trades = (await publicClient.readContract({
+        address: vault.performanceLedger,
+        abi: PerformanceLedgerABI,
+        functionName: 'getTradeHistory',
+        args: [BigInt(offset), BigInt(limit)],
+      })) as any[];
+    }
+
+    let cumulative = 0;
+    const chartData = trades.map((t) => {
+      const size = Number(t.size);
+      const pnlBps = size > 0 ? (Number(t.pnl) * 10000) / size : 0;
+      cumulative += pnlBps;
+      return {
+        date: new Date(Number(t.timestamp) * 1000).toISOString().slice(0, 10),
+        pnl: pnlBps,
+        cumulativePnl: cumulative,
+      };
+    });
+
+    res.json({
+      trades: trades.map((t: any) => ({
+        direction: Number(t.direction),
+        entryPrice: t.entryPrice.toString(),
+        exitPrice: t.exitPrice.toString(),
+        pnl: Number(t.pnl) / 1e18,
+        timestamp: Number(t.timestamp),
+      })),
+      chartData,
+    });
+  } catch (err) {
+    logger.error(CTX, 'Failed to get PnL', err);
+    res.status(500).json({ error: 'Failed to fetch PnL data' });
   }
 });
 
@@ -129,9 +219,8 @@ vaultRouter.get('/:address/leaderboard', async (req: Request, res: Response) => 
         direction: Number(t.direction),
         entryPrice: t.entryPrice.toString(),
         exitPrice: t.exitPrice.toString(),
-        pnlBps: t.pnlBps.toString(),
-        settledAt: t.settledAt.toString(),
-        signalHash: t.signalHash,
+        pnlBps: t.size > 0n ? ((t.pnl * 10000n) / t.size).toString() : '0',
+        settledAt: t.timestamp.toString(),
       })),
     });
   } catch (err) {

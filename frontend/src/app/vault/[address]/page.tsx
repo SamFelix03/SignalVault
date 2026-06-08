@@ -79,43 +79,11 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
     query: { enabled: !isMockMode() },
   })
 
-  const { data: deploymentCount } = useReadContract({
-    address: VAULT_FACTORY_ADDRESS,
-    abi: VaultFactoryABI,
-    functionName: 'getDeploymentCount',
+  const { data: followerCountData } = useReadContract({
+    ...vaultConfig(vaultAddress),
+    functionName: 'followerCount',
     query: { enabled: !isMockMode() },
   })
-
-  const [deploymentId, setDeploymentId] = useState<bigint | undefined>(undefined)
-  const [performanceLedgerAddr, setPerformanceLedgerAddr] = useState<Address | undefined>(undefined)
-
-  useEffect(() => {
-    async function findDeployment() {
-      if (!deploymentCount) return
-      const count = Number(deploymentCount as bigint)
-      for (let i = 0; i < count; i++) {
-        setDeploymentId(BigInt(i))
-        break
-      }
-    }
-    findDeployment()
-  }, [deploymentCount])
-
-  const { data: deploymentData } = useReadContract({
-    address: VAULT_FACTORY_ADDRESS,
-    abi: VaultFactoryABI,
-    functionName: 'getDeployment',
-    args: deploymentId !== undefined ? [deploymentId] : undefined,
-    query: { enabled: !isMockMode() && deploymentId !== undefined },
-  })
-
-  useEffect(() => {
-    if (!deploymentData) return
-    const d = deploymentData as { vault: Address; performanceLedger: Address; orchestrator: Address }
-    if (d.vault.toLowerCase() === vaultAddress.toLowerCase()) {
-      setPerformanceLedgerAddr(d.performanceLedger)
-    }
-  }, [deploymentData, vaultAddress])
 
   const [stats, setStats] = useState<VaultStats>(
     isMockMode()
@@ -123,21 +91,51 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
       : { totalPnl: 0, sharpeRatio: 0, winRate: 0, maxDrawdown: 0, tradeCount: 0, followerCount: 0 }
   )
 
+  const [performanceLedgerAddr, setPerformanceLedgerAddr] = useState<Address | undefined>(undefined)
+
   useEffect(() => {
     if (isMockMode()) {
       setStats(getMockStats(address))
       return
     }
 
-    fetch(`${API_URL}/api/vaults/${address}/stats`)
+    fetch(`${API_URL}/api/vaults/${address}/leaderboard`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setStats(d) })
+      .then(d => {
+        if (d) {
+          const totalTrades = Number(d.totalTrades ?? 0)
+          const winCount = Number(d.winCount ?? 0)
+          setStats({
+            totalPnl: Number(d.totalPnl ?? 0) / 1e18,
+            sharpeRatio: Number(d.sharpeApprox ?? 0) / 1000,
+            winRate: Number(d.winRate ?? 0) / 10000,
+            maxDrawdown: Number(d.maxDrawdownBps ?? 0) / 100,
+            tradeCount: totalTrades,
+            followerCount: followerCountData ? Number(followerCountData) : 0,
+          })
+          if (d.vault) {
+            setPerformanceLedgerAddr(undefined)
+          }
+        }
+      })
       .catch(() => {})
-  }, [address])
+
+    fetch(`${API_URL}/api/vaults/${address}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const vault = d?.vault ?? d
+        if (vault?.performanceLedger) {
+          setPerformanceLedgerAddr(vault.performanceLedger as Address)
+        }
+        if (vault?.followerCount != null) {
+          setStats(prev => ({ ...prev, followerCount: Number(vault.followerCount) }))
+        }
+      })
+      .catch(() => {})
+  }, [address, followerCountData])
 
   const resolvedStrategist = isMockMode() ? mockMeta?.strategist : strategist
   const resolvedOrchestrator = isMockMode() ? mockMeta?.orchestrator : orchestratorAddr
-  const resolvedLedger = isMockMode() ? mockMeta?.performanceLedger : performanceLedgerAddr
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -214,8 +212,8 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
         </TabsContent>
 
         <TabsContent value="leaderboard" className="mt-6">
-          {resolvedLedger ? (
-            <Leaderboard performanceLedgerAddress={resolvedLedger as Address} />
+          {performanceLedgerAddr ? (
+            <Leaderboard performanceLedgerAddress={performanceLedgerAddr} />
           ) : (
             <Card>
               <CardContent className="p-8 text-center">

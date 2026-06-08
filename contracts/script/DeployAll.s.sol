@@ -12,15 +12,19 @@ import {EpochCron} from "../src/reactivity/EpochCron.sol";
 import {PerformanceLedger} from "../src/finance/PerformanceLedger.sol";
 import {FeeDistributor} from "../src/finance/FeeDistributor.sol";
 
+/// @notice Local simulation / gas preview only.
+/// @dev Do NOT use `forge script ... --broadcast` on Somnia testnet — CREATE gas is
+///      ~25-55M per contract and batch broadcasts revert with out-of-gas.
+///      Use `script/deploy.sh` for reliable on-chain deployment.
 contract DeployAll is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
         console.log("Deployer:", deployer);
+        console.log("NOTE: simulation only - run script/deploy.sh to broadcast");
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Step 1: Deploy implementation contracts (templates for cloning)
         address implVault = address(new StrategyVault());
         console.log("Impl StrategyVault:", implVault);
 
@@ -45,17 +49,13 @@ contract DeployAll is Script {
         address implFees = address(new FeeDistributor());
         console.log("Impl FeeDistributor:", implFees);
 
-        // Step 2: Deploy the factory with all implementation addresses
         VaultFactory factory = new VaultFactory(
             implVault, implOrch, implMirror, implStop,
             implGuard, implCron, implLedger, implFees
         );
         console.log("VaultFactory:", address(factory));
 
-        // Step 3: Set DEX address (deployer as placeholder for hackathon)
-        factory.setDexAddress(deployer);
-
         vm.stopBroadcast();
-        console.log("--- ALL IMPLEMENTATIONS + FACTORY DEPLOYED ---");
+        console.log("--- SIMULATION COMPLETE (use script/deploy.sh to deploy) ---");
     }
 }

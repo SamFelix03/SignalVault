@@ -22,6 +22,7 @@ const navItems = [
   { href: '/', label: 'Leaderboard', icon: BarChart3, exact: true },
   { href: '/deploy', label: 'Deploy Vault', icon: Rocket, exact: false },
   { href: '/follow', label: 'Follow Dashboard', icon: LayoutDashboard, exact: false },
+  { href: '/composability', label: 'Composability', icon: Activity, exact: false },
 ]
 
 export function Sidebar({ collapsed, onCollapsedChange, onNavigate }: SidebarProps) {

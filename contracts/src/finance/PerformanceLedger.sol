@@ -75,6 +75,11 @@ contract PerformanceLedger {
         authorizedCallers[caller] = true;
     }
 
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "zero address");
+        owner = newOwner;
+    }
+
     function recordTrade(
         int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size
     ) external onlyAuthorized nonReentrant {

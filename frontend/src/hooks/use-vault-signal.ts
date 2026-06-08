@@ -28,26 +28,24 @@ export function useVaultSignal(vaultAddress: Address) {
     }
   }
 
-  const signal: Signal | undefined = data
-    ? (() => {
-        const d = data as unknown as {
-          direction: number
-          sizeBps: number
-          stopPrice: bigint
-          reasoningHash: string
-          epoch: bigint
-          timestamp: bigint
-        }
-        return {
-          direction: Number(d.direction),
-          sizeBps: Number(d.sizeBps),
-          stopPrice: d.stopPrice,
-          reasoningHash: d.reasoningHash,
-          epoch: Number(d.epoch),
-          timestamp: Number(d.timestamp),
-        }
-      })()
-    : undefined
+  let signal: Signal | undefined = undefined
+  if (data) {
+    const d = data as Record<string, unknown>
+    const direction = Number(d.direction ?? (d as any)[0] ?? 0)
+    const sizeBps = Number(d.sizeBps ?? (d as any)[1] ?? 0)
+    const hasSignal = direction !== 0 || sizeBps !== 0
+    if (hasSignal) {
+      signal = {
+        direction,
+        sizeBps,
+        stopPrice: BigInt(String(d.stopPrice ?? (d as any)[2] ?? 0)),
+        epoch: Number(d.epoch ?? (d as any)[3] ?? 0),
+        reasoningHash: String(d.reasoningHash ?? (d as any)[4] ?? '0x'),
+        reasoning: String(d.reasoningSummary ?? (d as any)[5] ?? '') || undefined,
+        timestamp: 0,
+      }
+    }
+  }
 
   return { signal, isLoading, error, refetch }
 }

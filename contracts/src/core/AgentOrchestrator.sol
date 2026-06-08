@@ -6,8 +6,15 @@ import {IJsonApiAgent} from "../interfaces/IJsonApiAgent.sol";
 import {ILLMParseAgent} from "../interfaces/ILLMParseAgent.sol";
 import {ILLMInferAgent} from "../interfaces/ILLMInferAgent.sol";
 import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
+import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
+
+interface IPerformanceLedger {
+    function recordTrade(int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size) external;
+}
 
 contract AgentOrchestrator is IAgentRequesterHandler {
+    // Somnia testnet Protofire BTC/USD (mainnet proxy: 0xa57d6376...)
+    address public constant BTC_USD_ORACLE = 0x8CeE6c58b8CbD8afdEaF14e6fCA0876765e161fE;
     IAgentRequester public platform;
 
     uint256 public constant JSON_API_AGENT_ID = 13174292974160097713;
@@ -18,6 +25,8 @@ contract AgentOrchestrator is IAgentRequesterHandler {
     uint256 public constant LLM_PARSE_COST_PER_AGENT = 0.10 ether;
     uint256 public constant LLM_INFER_COST_PER_AGENT = 0.07 ether;
     uint256 public constant SUBCOMMITTEE_SIZE = 3;
+    /// @notice Max wait for Somnia agents before rule-based pipeline completion
+    uint256 public constant PIPELINE_TIMEOUT = 90;
 
     address public owner;
     address public vault;
@@ -101,33 +110,65 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         run.stage = PipelineStage.FetchingPrice;
         run.startedAt = block.timestamp;
 
-        // Stage 1: Fire price + funding in parallel
-        _fetchPrice(currentRunId);
+        // Stage 1: Oracle price (reliable) + JSON API funding (sentiment proxy)
+        _bootstrapOraclePrice(currentRunId);
         _fetchFunding(currentRunId);
 
         emit PipelineStarted(currentRunId, block.timestamp);
     }
 
-    /// @notice Manual trigger for demo — allows owner to kick the pipeline
+    /// @notice Manual trigger — owner kicks the agent pipeline
     function triggerNow() external payable onlyOwner {
         this.startPipeline{value: msg.value}();
     }
 
-    // ── Stage 1a: JSON API — BTC Price ──────────────────────────────────
+    /// @notice Complete a pipeline run with rule-based signal when agents exceed PIPELINE_TIMEOUT
+    function finalizeStaleRun(uint256 runId) external nonReentrant {
+        require(runId > 0 && runId <= currentRunId, "invalid run");
+        PipelineRun storage run = runs[runId];
+        require((run.flags & 8) == 0, "already completed");
+        require(block.timestamp >= run.startedAt + PIPELINE_TIMEOUT, "not stale yet");
 
-    function _fetchPrice(uint256 runId) internal {
-        bytes memory payload = abi.encodeWithSelector(
-            IJsonApiAgent.fetchUint.selector,
-            PRICE_URL, PRICE_SELECTOR, uint8(2)
-        );
+        if (run.fetchedPrice == 0) {
+            run.fetchedPrice = _readOraclePriceCents();
+            run.flags |= 1;
+        }
+        if ((run.flags & 2) == 0) {
+            run.fetchedFunding = run.fetchedPrice > 0 ? (run.fetchedPrice * 5) / 1000 : 0;
+            run.flags |= 2;
+        }
+        if ((run.flags & 4) == 0) {
+            run.fearGreedIndex = 50;
+            run.flags |= 4;
+        }
+        if (bytes(run.newsSummary).length == 0) {
+            run.newsSummary = "Macro context unavailable";
+        }
 
-        uint256 deposit = platform.getRequestDeposit() + JSON_FETCH_COST_PER_AGENT * SUBCOMMITTEE_SIZE;
-        uint256 requestId = platform.createRequest{value: deposit}(
-            JSON_API_AGENT_ID, address(this), this.handlePriceResponse.selector, payload
-        );
+        _completeRunWithRuleBasedSignal(runId);
+    }
 
-        requestToRun[requestId] = runId;
-        pendingRequests[requestId] = true;
+    // ── Stage 1a: On-chain oracle — BTC Price ───────────────────────────
+
+    function _bootstrapOraclePrice(uint256 runId) internal {
+        PipelineRun storage run = runs[runId];
+        run.fetchedPrice = _readOraclePriceCents();
+        run.flags |= 1; // priceReady
+        emit StageCompleted(runId, "price_oracle", 0);
+        _tryFireStage2(runId);
+    }
+
+    function _readOraclePriceCents() internal view returns (uint256) {
+        (, int256 answer,,,) = AggregatorV3Interface(BTC_USD_ORACLE).latestRoundData();
+        require(answer > 0, "invalid oracle");
+        // Chainlink-style 8-decimal USD price → cents (2 decimals)
+        return uint256(answer) / 1e6;
+    }
+
+    function _readOraclePriceWei() internal view returns (uint256) {
+        (, int256 answer,,,) = AggregatorV3Interface(BTC_USD_ORACLE).latestRoundData();
+        require(answer > 0, "invalid oracle");
+        return uint256(answer) * 1e10;
     }
 
     // ── Stage 1b: JSON API — Funding Rate ───────────────────────────────
@@ -148,28 +189,6 @@ contract AgentOrchestrator is IAgentRequesterHandler {
 
     // ── Stage 1 Callbacks ───────────────────────────────────────────────
 
-    function handlePriceResponse(
-        uint256 requestId, Response[] memory responses, ResponseStatus status, Request memory
-    ) external onlyPlatform {
-        require(pendingRequests[requestId], "unknown request");
-        delete pendingRequests[requestId];
-
-        uint256 runId = requestToRun[requestId];
-        PipelineRun storage run = runs[runId];
-
-        if (status != ResponseStatus.Success || responses.length == 0) {
-            run.flags |= 8; // completed
-            emit PipelineFailed(runId, "price fetch failed");
-            return;
-        }
-
-        run.fetchedPrice = abi.decode(responses[0].result, (uint256));
-        run.flags |= 1; // priceReady
-        emit StageCompleted(runId, "price", requestId);
-
-        _tryFireStage2(runId);
-    }
-
     function handleFundingResponse(
         uint256 requestId, Response[] memory responses, ResponseStatus status, Request memory
     ) external onlyPlatform {
@@ -178,6 +197,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
 
         uint256 runId = requestToRun[requestId];
         PipelineRun storage run = runs[runId];
+        if ((run.flags & 8) != 0) return;
 
         if (status != ResponseStatus.Success || responses.length == 0) {
             run.flags |= 8; // completed
@@ -231,6 +251,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
 
         uint256 runId = requestToRun[requestId];
         PipelineRun storage run = runs[runId];
+        if ((run.flags & 8) != 0) return;
 
         if (status == ResponseStatus.Success && responses.length > 0) {
             run.fearGreedIndex = abi.decode(responses[0].result, (uint256));
@@ -282,6 +303,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
 
         uint256 runId = requestToRun[requestId];
         PipelineRun storage run = runs[runId];
+        if ((run.flags & 8) != 0) return;
 
         if (status == ResponseStatus.Success && responses.length > 0) {
             run.newsSummary = abi.decode(responses[0].result, (string));
@@ -363,6 +385,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         delete pendingRequests[requestId];
 
         uint256 runId = requestToRun[requestId];
+        if ((runs[runId].flags & 8) != 0) return;
 
         if (status != ResponseStatus.Success || responses.length == 0) {
             runs[runId].flags |= 8;
@@ -417,9 +440,27 @@ contract AgentOrchestrator is IAgentRequesterHandler {
     function _handleStopResponse(string memory response, bytes32 reasoningHash) internal {
         IStrategyVault.Signal memory current = IStrategyVault(vault).getCurrentSignal();
         string memory reason = bytes(response).length > 0 ? response : "LLM decided to hold";
+        _settlePreviousTrade(current);
         IStrategyVault(vault).updateSignal(
             current.direction, current.sizeBps, current.stopPrice, reason, reasoningHash
         );
+    }
+
+    function _settlePreviousTrade(IStrategyVault.Signal memory previous) internal {
+        if (previous.direction == 0 || previous.sizeBps == 0) return;
+
+        address ledger = _performanceLedger();
+        if (ledger == address(0)) return;
+
+        uint256 mark = _readOraclePriceWei();
+        uint256 size = (uint256(previous.sizeBps) * 1e18) / 10_000;
+        IPerformanceLedger(ledger).recordTrade(previous.direction, mark, mark, size);
+    }
+
+    function _performanceLedger() internal view returns (address) {
+        (bool ok, bytes memory data) = vault.staticcall(abi.encodeWithSignature("performanceLedger()"));
+        if (!ok || data.length < 32) return address(0);
+        return abi.decode(data, (address));
     }
 
     function _executeToolCall(bytes memory calldata_, bytes32 reasoningHash) internal {
@@ -434,6 +475,8 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         if (selector == updateSig) {
             (int8 direction, uint16 sizeBps, uint256 stopPrice, string memory reasoning) =
                 abi.decode(args, (int8, uint16, uint256, string));
+            IStrategyVault.Signal memory previous = IStrategyVault(vault).getCurrentSignal();
+            _settlePreviousTrade(previous);
             IStrategyVault(vault).updateSignal(direction, sizeBps, stopPrice, reasoning, reasoningHash);
         } else if (selector == exitSig) {
             (string memory reason) = abi.decode(args, (string));
@@ -472,6 +515,64 @@ contract AgentOrchestrator is IAgentRequesterHandler {
     ) {
         PipelineRun storage run = runs[runId];
         return (run.fetchedPrice, run.fetchedFunding, run.fearGreedIndex, run.newsSummary);
+    }
+
+    // ── Rule-based completion (used when agents time out) ─────────────────
+
+    function _completeRunWithRuleBasedSignal(uint256 runId) internal {
+        PipelineRun storage run = runs[runId];
+        (int8 direction, uint16 sizeBps, uint256 stopPrice, string memory reasoning, bytes32 reasoningHash) =
+            _deriveRuleBasedSignal(run);
+
+        IStrategyVault.Signal memory previous = IStrategyVault(vault).getCurrentSignal();
+        _settlePreviousTrade(previous);
+        IStrategyVault(vault).updateSignal(direction, sizeBps, stopPrice, reasoning, reasoningHash);
+
+        run.stage = PipelineStage.Idle;
+        run.flags |= 8;
+        emit PipelineCompleted(runId, direction, sizeBps);
+    }
+
+    function _deriveRuleBasedSignal(PipelineRun storage run)
+        internal
+        view
+        returns (int8 direction, uint16 sizeBps, uint256 stopPrice, string memory reasoning, bytes32 reasoningHash)
+    {
+        if (run.fearGreedIndex < 30) {
+            direction = 1;
+            sizeBps = 2000;
+        } else if (run.fearGreedIndex > 70) {
+            direction = -1;
+            sizeBps = 1500;
+        } else {
+            direction = 1;
+            sizeBps = 1000;
+        }
+
+        if (run.fetchedFunding > 0 && run.fetchedFunding > run.fetchedPrice / 20) {
+            direction = -1;
+            sizeBps = 1200;
+        }
+
+        uint256 price = run.fetchedPrice > 0 ? run.fetchedPrice : _readOraclePriceCents();
+        stopPrice = direction > 0 ? (price * 97) / 100 : (price * 103) / 100;
+
+        reasoningHash = keccak256(abi.encodePacked(price, run.fearGreedIndex, run.newsSummary));
+        reasoning = string(abi.encodePacked(
+            "Rule-based signal: BTC $",
+            _uint2str(price / 100),
+            ".",
+            _pad2(price % 100),
+            ", Fear/Greed ",
+            _uint2str(run.fearGreedIndex),
+            "/100. ",
+            run.newsSummary
+        ));
+    }
+
+    function _pad2(uint256 value) internal pure returns (string memory) {
+        if (value < 10) return string(abi.encodePacked("0", _uint2str(value)));
+        return _uint2str(value);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import { useState, type ComponentType, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi'
 import { parseEther } from 'viem'
-import { Bot, Gauge, Percent, Wallet, Sparkles } from 'lucide-react'
+import { Bot, Gauge, Percent, Wallet } from 'lucide-react'
 import { vaultFactoryConfig } from '@/lib/contracts'
 import { TxStatus } from '@/components/common/tx-status'
 import { PromptPreview } from './prompt-preview'
@@ -51,6 +51,7 @@ function FormSection({
 export function DeployForm() {
   const router = useRouter()
   const { address } = useAccount()
+  const [vaultName, setVaultName] = useState('')
   const [strategyPrompt, setStrategyPrompt] = useState('')
   const [feeBps, setFeeBps] = useState(500)
   const [maxDrawdownBps, setMaxDrawdownBps] = useState(2000)
@@ -60,7 +61,7 @@ export function DeployForm() {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
   function handleDeploy() {
-    if (!strategyPrompt) return
+    if (!strategyPrompt || !vaultName) return
     writeContract({
       ...vaultFactoryConfig,
       functionName: 'deployVault',
@@ -70,7 +71,7 @@ export function DeployForm() {
   }
 
   const txState = isPending ? 'pending' : isConfirming ? 'confirming' : isSuccess ? 'success' : writeError ? 'error' : 'idle'
-  const progress = strategyPrompt ? (feeBps > 0 ? (deposit ? 100 : 66) : 33) : 0
+  const progress = vaultName ? (strategyPrompt ? (feeBps > 0 ? (deposit ? 100 : 75) : 50) : 25) : 0
 
   function handleClose() {
     reset()
@@ -113,6 +114,23 @@ export function DeployForm() {
           <CardContent className="space-y-8">
             <FormSection
               step={1}
+              title="Vault Name"
+              description="A short name for your strategy vault"
+              icon={Bot}
+            >
+              <Input
+                id="vaultName"
+                value={vaultName}
+                onChange={e => setVaultName(e.target.value)}
+                placeholder="e.g. BTC Momentum Alpha"
+                className="border-border/80 bg-secondary/30 focus:bg-background"
+              />
+            </FormSection>
+
+            <Separator />
+
+            <FormSection
+              step={2}
               title="Strategy Prompt"
               description="The agent reads this every epoch to decide trades"
               icon={Bot}
@@ -121,7 +139,7 @@ export function DeployForm() {
                 id="strategy"
                 value={strategyPrompt}
                 onChange={e => setStrategyPrompt(e.target.value)}
-                rows={6}
+                rows={5}
                 placeholder="e.g. Momentum breakout on BTC/USDC. Max 20% drawdown. Exit if funding rate exceeds 0.1%. Reduce size when Fear & Greed below 30..."
                 className="resize-none border-border/80 bg-secondary/30 focus:bg-background"
               />
@@ -130,7 +148,7 @@ export function DeployForm() {
             <Separator />
 
             <FormSection
-              step={2}
+              step={3}
               title="Risk Parameters"
               description="Performance fee and drawdown guard thresholds"
               icon={Percent}
@@ -165,7 +183,7 @@ export function DeployForm() {
             <Separator />
 
             <FormSection
-              step={3}
+              step={4}
               title="Agent Funding"
               description="STT deposit for the orchestrator pipeline"
               icon={Gauge}
@@ -183,11 +201,10 @@ export function DeployForm() {
 
             <Button
               onClick={handleDeploy}
-              disabled={!strategyPrompt || isPending || isConfirming}
+              disabled={!vaultName || !strategyPrompt || isPending || isConfirming}
               size="lg"
               className="w-full bg-accent text-accent-foreground hover:bg-accent/90 shadow-lg shadow-accent/10"
             >
-              <Sparkles className="h-4 w-4" />
               {isPending ? 'Confirm in Wallet...' : isConfirming ? 'Deploying 8 Contracts...' : 'Deploy Vault'}
             </Button>
           </CardContent>
@@ -195,7 +212,7 @@ export function DeployForm() {
       </div>
 
       <div className="space-y-4 xl:col-span-2 xl:sticky xl:top-24 xl:self-start">
-        <PromptPreview name={strategyPrompt.slice(0, 50)} description={strategyPrompt} />
+        <PromptPreview name={vaultName} description={strategyPrompt} />
       </div>
 
       <TxStatus state={txState} hash={txHash} error={writeError?.message} onClose={handleClose} />

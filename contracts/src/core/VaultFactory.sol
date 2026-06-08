@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import {DreamDexAdapter} from "../integrations/DreamDexAdapter.sol";
 
 interface IInitVault {
     function initialize(address, address, string calldata, uint16, address) external;
@@ -32,6 +33,7 @@ interface IInitEpoch {
 
 interface IInitLedger {
     function initialize(address, address, address) external;
+    function addAuthorizedCaller(address caller) external;
 }
 
 interface IInitFees {
@@ -57,7 +59,9 @@ contract VaultFactory {
 
     // Somnia platform constants
     address public constant AGENT_PLATFORM = 0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776;
-    address public constant BTC_USD_ORACLE = 0xa57d637618252669fD859B1F4C7bE6F52Bef67ed;
+    // Somnia testnet Protofire BTC/USD (mainnet proxy: 0xa57d6376...)
+    address public constant BTC_USD_ORACLE = 0x8CeE6c58b8CbD8afdEaF14e6fCA0876765e161fE;
+    address public constant DREAMDEX_WBTC_POOL = 0x3605f28aA7C50e7441211e77Cb0762d49539326C;
 
     address public owner;
     address public dexAddress;
@@ -160,10 +164,12 @@ contract VaultFactory {
         IInitVault(dep.vault).setReactors(dep.mirrorReactor, dep.stopReactor, dep.drawdownGuard);
         IInitVault(dep.vault).setPerformanceLedger(dep.performanceLedger);
         IInitMirror(dep.mirrorReactor).setPerformanceLedger(dep.performanceLedger);
+        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.orchestrator);
 
         // Transfer ownership from factory to strategist
         ITransferOwnership(dep.vault).transferOwnership(dep.strategist);
         ITransferOwnership(dep.orchestrator).transferOwnership(dep.strategist);
+        ITransferOwnership(dep.performanceLedger).transferOwnership(dep.strategist);
 
         // Fund agent pipeline
         if (msg.value > 0) {
@@ -187,16 +193,15 @@ contract VaultFactory {
         uint16 performanceFeeBps,
         uint256 maxDrawdownBps
     ) internal {
-        address dex = dexAddress != address(0) ? dexAddress : dep.strategist;
-
         dep.mirrorReactor = implMirrorReactor.clone();
-        IInitMirror(dep.mirrorReactor).initialize(dep.strategist, dep.vault, dex);
+        address dexAdapter = address(new DreamDexAdapter(DREAMDEX_WBTC_POOL, dep.mirrorReactor));
+        IInitMirror(dep.mirrorReactor).initialize(dep.strategist, dep.vault, dexAdapter);
 
         dep.stopReactor = implStopReactor.clone();
-        IInitStop(dep.stopReactor).initialize(dep.strategist, dep.vault, dex);
+        IInitStop(dep.stopReactor).initialize(dep.strategist, dep.vault, dexAdapter);
 
         dep.performanceLedger = implPerformanceLedger.clone();
-        IInitLedger(dep.performanceLedger).initialize(dep.strategist, dep.vault, BTC_USD_ORACLE);
+        IInitLedger(dep.performanceLedger).initialize(address(this), dep.vault, BTC_USD_ORACLE);
 
         dep.drawdownGuard = implDrawdownGuard.clone();
         IInitDrawdown(dep.drawdownGuard).initialize(dep.strategist, dep.vault, dep.performanceLedger, maxDrawdownBps);

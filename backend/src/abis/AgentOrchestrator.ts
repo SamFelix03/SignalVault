@@ -36,4 +36,11 @@ export const AgentOrchestratorABI = [
     outputs: [],
     stateMutability: 'payable',
   },
+  {
+    type: 'function',
+    name: 'finalizeStaleRun',
+    inputs: [{ name: 'runId', type: 'uint256' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
 ] as const;

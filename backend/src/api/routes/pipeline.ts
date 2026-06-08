@@ -2,9 +2,11 @@ import { Router, type Request, type Response } from 'express';
 import { type Address, getAddress, parseEther } from 'viem';
 import { publicClient, getWalletClient } from '../../config/chains';
 import { vaultIndexer } from '../../services/vault-indexer';
+import { schedulePipelineWatchdog } from '../../services/pipeline-watchdog';
 import { AgentOrchestratorABI } from '../../abis/AgentOrchestrator';
 import { JSON_FETCH_COST, LLM_PARSE_COST, LLM_INFER_COST } from '../../config/constants';
 import { logger } from '../../utils/logger';
+import { eventBus } from '../../services/event-bus';
 
 const CTX = 'PipelineRoutes';
 export const pipelineRouter = Router();
@@ -27,7 +29,14 @@ pipelineRouter.get('/:vaultAddress', async (req: Request, res: Response) => {
     }) as bigint;
 
     if (currentRunId === 0n) {
-      res.json({ runId: '0', stage: 0, flags: 0, startedAt: '0', data: null });
+      res.json({
+        runId: '0',
+        stage: 0,
+        flags: 0,
+        startedAt: '0',
+        completed: false,
+        data: null,
+      });
       return;
     }
 
@@ -46,11 +55,15 @@ pipelineRouter.get('/:vaultAddress', async (req: Request, res: Response) => {
       }) as Promise<[bigint, bigint, bigint, string]>,
     ]);
 
+    const flags = status[1];
+    const completed = (flags & 8) !== 0;
+
     res.json({
       runId: currentRunId.toString(),
       stage: status[0],
-      flags: status[1],
+      flags,
       startedAt: status[2].toString(),
+      completed,
       data: {
         fetchedPrice: data[0].toString(),
         fetchedFunding: data[1].toString(),
@@ -75,17 +88,34 @@ pipelineRouter.post('/:vaultAddress/trigger', async (req: Request, res: Response
 
     const orchestratorAddress = vault.orchestrator;
     const walletClient = getWalletClient();
-    const totalCost = JSON_FETCH_COST + LLM_PARSE_COST + LLM_INFER_COST;
+    const agentBudget = JSON_FETCH_COST + LLM_PARSE_COST + LLM_INFER_COST;
 
     const txHash = await walletClient.writeContract({
       address: orchestratorAddress,
       abi: AgentOrchestratorABI,
       functionName: 'startPipeline',
-      value: parseEther(totalCost.toString()),
+      value: parseEther(agentBudget.toString()),
+      gas: 8_000_000n,
     });
 
-    logger.info(CTX, `Triggered pipeline for vault ${vaultAddress}`, { txHash });
-    res.json({ txHash, vault: vaultAddress, orchestrator: orchestratorAddress });
+    await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+    const runId = await publicClient.readContract({
+      address: orchestratorAddress,
+      abi: AgentOrchestratorABI,
+      functionName: 'currentRunId',
+    }) as bigint;
+
+    schedulePipelineWatchdog(orchestratorAddress, runId);
+    eventBus.emitPipelineUpdate(vaultAddress, { runId: runId.toString(), status: 'started', txHash });
+
+    logger.info(CTX, `Triggered pipeline for vault ${vaultAddress}`, { txHash, runId: runId.toString() });
+    res.json({
+      txHash,
+      vault: vaultAddress,
+      orchestrator: orchestratorAddress,
+      runId: runId.toString(),
+    });
   } catch (err) {
     logger.error(CTX, 'Failed to trigger pipeline', err);
     res.status(500).json({ error: 'Failed to trigger pipeline' });

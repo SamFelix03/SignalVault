@@ -1,6 +1,6 @@
 import { SDK as StreamsSDK, SchemaEncoder, zeroBytes32 } from '@somnia-chain/streams';
 import { SDK as ReactivitySDK, type SubscriptionCallback } from '@somnia-chain/reactivity';
-import { keccak256, toBytes, toHex, createPublicClient, webSocket, type Address, type Log } from 'viem';
+import { keccak256, toBytes, toHex, createPublicClient, webSocket, parseAbiItem, type Address, type Log } from 'viem';
 import { publicClient, getWalletClient, config } from '../config/chains';
 import { somniaTestnet } from '../config/chains';
 import { SIGNAL_SCHEMA, PNL_SCHEMA, VAULT_META_SCHEMA } from '../config/schemas';
@@ -38,17 +38,23 @@ class StreamPublisher {
       const streamsClient = { public: publicClient, wallet: walletClient } as ConstructorParameters<typeof StreamsSDK>[0];
       this.streamsSDK = new StreamsSDK(streamsClient);
 
-      const wsPublicClient = createPublicClient({
-        chain: somniaTestnet,
-        transport: webSocket(WS_RPC_URL),
-      });
-      const reactivityClient = { public: wsPublicClient } as ConstructorParameters<typeof ReactivitySDK>[0];
-      this.reactivitySDK = new ReactivitySDK(reactivityClient);
-
       await this.initSchemaIds();
-      await this.subscribeToEvents();
 
-      logger.info(CTX, 'Stream publisher started successfully');
+      try {
+        const wsUrl = WS_RPC_URL || config.wsRpcUrl;
+        if (!wsUrl) throw new Error('WS_RPC_URL not configured');
+        const wsPublicClient = createPublicClient({
+          chain: somniaTestnet,
+          transport: webSocket(wsUrl),
+        });
+        const reactivityClient = { public: wsPublicClient } as ConstructorParameters<typeof ReactivitySDK>[0];
+        this.reactivitySDK = new ReactivitySDK(reactivityClient);
+        await this.subscribeToEvents();
+        logger.info(CTX, 'Stream publisher started with WebSocket reactivity');
+      } catch (wsErr) {
+        logger.warn(CTX, 'WebSocket reactivity unavailable, using HTTP log polling', wsErr);
+        this.startHttpPolling();
+      }
     } catch (err) {
       logger.error(CTX, 'Failed to start stream publisher', err);
     }
@@ -116,6 +122,7 @@ class StreamPublisher {
 
     if (sub instanceof Error) {
       logger.error(CTX, 'Failed to subscribe', sub);
+      this.startHttpPolling();
       return;
     }
 
@@ -136,6 +143,22 @@ class StreamPublisher {
     } else if (topic0 === EVENT_SIGNATURES.DrawdownUpdated) {
       await this.publishVaultMeta(data);
     }
+  }
+
+  private logToCallback(log: Log): SubscriptionCallback {
+    return {
+      result: {
+        address: log.address,
+        topics: [...log.topics],
+        data: log.data,
+        blockHash: log.blockHash,
+        blockNumber: log.blockNumber,
+        transactionHash: log.transactionHash,
+        transactionIndex: log.transactionIndex,
+        logIndex: log.logIndex,
+        simulationResults: [],
+      },
+    } as SubscriptionCallback;
   }
 
   private toLog(data: SubscriptionCallback): Log {
@@ -269,10 +292,46 @@ class StreamPublisher {
   private reconnect(): void {
     logger.info(CTX, 'Attempting reconnection in 5s...');
     setTimeout(() => {
-      this.subscribeToEvents().catch((err) =>
-        logger.error(CTX, 'Reconnection failed', err)
-      );
+      this.subscribeToEvents().catch((err) => {
+        logger.error(CTX, 'Reconnection failed, falling back to HTTP polling', err);
+        this.startHttpPolling();
+      });
     }, 5000);
+  }
+
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private lastPolledBlock = 0n;
+
+  private startHttpPolling(): void {
+    if (this.pollTimer) return;
+    publicClient.getBlockNumber().then((n) => { this.lastPolledBlock = n; });
+
+    this.pollTimer = setInterval(async () => {
+      try {
+        const latest = await publicClient.getBlockNumber();
+        if (latest <= this.lastPolledBlock) return;
+
+        const vaults = vaultIndexer.getAllVaults();
+        for (const vault of vaults) {
+          const logs = await publicClient.getLogs({
+            address: vault.address,
+            event: parseAbiItem(
+              'event SignalUpdated(bytes32 indexed signalHash, int8 direction, uint16 sizeBps, uint256 stopPrice, string reasoningSummary, bytes32 reasoningHash)'
+            ),
+            fromBlock: this.lastPolledBlock + 1n,
+            toBlock: latest,
+          });
+          for (const log of logs) {
+            await this.handleEvent(this.logToCallback(log));
+          }
+        }
+        this.lastPolledBlock = latest;
+      } catch (err) {
+        logger.error(CTX, 'HTTP polling error', err);
+      }
+    }, 15_000);
+
+    logger.info(CTX, 'HTTP log polling started');
   }
 }
 

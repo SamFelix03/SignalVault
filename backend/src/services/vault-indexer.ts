@@ -3,6 +3,7 @@ import { publicClient, config } from '../config/chains';
 import { VaultFactoryABI } from '../abis/VaultFactory';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { logger } from '../utils/logger';
+import { eventBus } from './event-bus';
 
 const CTX = 'VaultIndexer';
 
@@ -53,6 +54,7 @@ class VaultIndexer {
   private signals: Map<Address, SignalRecord[]> = new Map();
   private trades: Map<Address, TradeRecord[]> = new Map();
   private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private indexedDeploymentCount = 0;
 
   async start(): Promise<void> {
     logger.info(CTX, 'Starting vault indexer');
@@ -88,6 +90,7 @@ class VaultIndexer {
         await this.indexVaultById(i);
       }
 
+      this.indexedDeploymentCount = Number(count);
       logger.info(CTX, `Indexed ${count} existing vaults`);
     } catch (err) {
       logger.error(CTX, 'Failed to load existing vaults', err);
@@ -166,8 +169,33 @@ class VaultIndexer {
     }
   }
 
+  private async syncNewDeployments(): Promise<void> {
+    if (!config.vaultFactoryAddress) return;
+
+    try {
+      const count = await publicClient.readContract({
+        address: config.vaultFactoryAddress,
+        abi: VaultFactoryABI,
+        functionName: 'getDeploymentCount',
+      }) as bigint;
+
+      const total = Number(count);
+      for (let i = this.indexedDeploymentCount; i < total; i++) {
+        await this.indexVaultById(i);
+      }
+      if (total > this.indexedDeploymentCount) {
+        logger.info(CTX, `Discovered ${total - this.indexedDeploymentCount} new vault(s)`);
+        this.indexedDeploymentCount = total;
+      }
+    } catch (err) {
+      logger.error(CTX, 'Failed to sync new deployments', err);
+    }
+  }
+
   private startPolling(): void {
     this.pollInterval = setInterval(async () => {
+      await this.syncNewDeployments();
+
       for (const [address, vault] of this.vaults) {
         try {
           const followers = await publicClient.readContract({
@@ -183,7 +211,8 @@ class VaultIndexer {
             functionName: 'getCurrentSignal',
           }) as { direction: number; sizeBps: number; stopPrice: bigint; epoch: bigint; reasoningHash: string; reasoningSummary: string };
 
-          vault.currentSignal = {
+          const prev = vault.currentSignal;
+          const next = {
             direction: signal.direction,
             sizeBps: signal.sizeBps,
             stopPrice: signal.stopPrice.toString(),
@@ -191,9 +220,14 @@ class VaultIndexer {
             reasoningHash: signal.reasoningHash,
             reasoningSummary: signal.reasoningSummary,
           };
+          vault.currentSignal = next;
+
+          if (!prev || prev.epoch !== next.epoch || prev.reasoningHash !== next.reasoningHash) {
+            eventBus.emitVaultUpdate(address, { vault: this.vaults.get(address) });
+          }
         } catch { /* skip failed polls */ }
       }
-    }, 30_000);
+    }, 10_000);
   }
 
   addSignalRecord(vaultAddress: Address, record: SignalRecord): void {

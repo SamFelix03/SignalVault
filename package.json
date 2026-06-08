@@ -11,7 +11,8 @@
     "dev:frontend": "npm run dev --workspace=frontend",
     "dev:frontend:mock": "npm run dev:mock --workspace=frontend",
     "build:contracts": "cd contracts && forge build",
-    "deploy:testnet": "cd contracts && forge script script/DeployAll.s.sol --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY",
+    "deploy:testnet": "cd contracts && ./script/deploy.sh",
+    "deploy:testnet:simulate": "cd contracts && forge script script/DeployAll.s.sol --rpc-url ${RPC_URL:-https://api.infra.testnet.somnia.network/}",
     "test:contracts": "cd contracts && forge test -vvv"
   },
   "dependencies": {

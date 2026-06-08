@@ -10,25 +10,26 @@ export function formatBps(bps: number | bigint): string {
 }
 
 export function formatPrice(price: number | bigint, decimals = 2): string {
-  const num = typeof price === 'bigint' ? Number(price) / 1e18 : price
+  const raw = typeof price === 'bigint' ? Number(price) : price
+  const num = raw > 1e15 ? raw / 1e18 : raw > 1e6 ? raw / 1e2 : raw
   return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
 export function directionLabel(direction: number): 'LONG' | 'SHORT' | 'FLAT' {
   if (direction === 1) return 'LONG'
-  if (direction === 2) return 'SHORT'
+  if (direction === -1 || direction === 2) return 'SHORT'
   return 'FLAT'
 }
 
 export function directionColor(direction: number): string {
   if (direction === 1) return 'text-success'
-  if (direction === 2) return 'text-destructive'
+  if (direction === -1 || direction === 2) return 'text-destructive'
   return 'text-warning'
 }
 
 export function directionBg(direction: number): string {
   if (direction === 1) return 'bg-success/10 border-success/30'
-  if (direction === 2) return 'bg-destructive/10 border-destructive/30'
+  if (direction === -1 || direction === 2) return 'bg-destructive/10 border-destructive/30'
   return 'bg-warning/10 border-warning/30'
 }
 

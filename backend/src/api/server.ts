@@ -4,8 +4,12 @@ import dotenv from 'dotenv';
 import { vaultRouter } from './routes/vaults';
 import { receiptRouter } from './routes/receipts';
 import { pipelineRouter } from './routes/pipeline';
+import { followerRouter } from './routes/followers';
+import { eventsRouter } from './routes/events';
+import { composabilityRouter } from './routes/composability';
 import { vaultIndexer } from '../services/vault-indexer';
 import { streamPublisher } from '../services/stream-publisher';
+import { pipelineReceiptIndexer } from '../services/pipeline-receipt-indexer';
 import { logger } from '../utils/logger';
 
 dotenv.config();
@@ -29,6 +33,9 @@ app.get('/health', (_req, res) => {
 app.use('/api/vaults', vaultRouter);
 app.use('/api/receipts', receiptRouter);
 app.use('/api/pipeline', pipelineRouter);
+app.use('/api/followers', followerRouter);
+app.use('/api/events', eventsRouter);
+app.use('/api/composability', composabilityRouter);
 
 async function bootstrap(): Promise<void> {
   try {
@@ -37,6 +44,9 @@ async function bootstrap(): Promise<void> {
 
     await streamPublisher.start();
     logger.info(CTX, 'Stream publisher initialized');
+
+    await pipelineReceiptIndexer.start();
+    logger.info(CTX, 'Pipeline receipt indexer initialized');
 
     app.listen(PORT, () => {
       logger.info(CTX, `Server running on port ${PORT}`);

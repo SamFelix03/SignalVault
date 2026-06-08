@@ -1,13 +1,13 @@
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
+
 import { createPublicClient, createWalletClient, http, defineChain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import dotenv from 'dotenv';
 import {
   CHAIN_ID, RPC_URL, WS_RPC_URL, EXPLORER_URL,
   VAULT_FACTORY_ADDRESS, PERFORMANCE_LEDGER_ADDRESS,
   AGENT_REQUESTER_ADDRESS, BTC_USD_ORACLE, ETH_USD_ORACLE,
 } from './constants';
-
-dotenv.config();
 
 export const somniaTestnet = defineChain({
   id: CHAIN_ID,

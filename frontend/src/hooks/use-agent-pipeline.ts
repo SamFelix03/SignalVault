@@ -2,9 +2,19 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { API_URL } from '@/lib/contracts'
+import { useVaultEvents } from '@/hooks/use-vault-events'
 import { isMockMode } from '@/lib/mock-mode'
 import { getMockPipeline } from '@/lib/mock-data'
 import { StageType, type StageTypeValue, type PipelineRun } from '@/types/pipeline'
+
+const stageMap: Record<number, StageTypeValue> = {
+  0: StageType.IDLE,
+  1: StageType.FETCHING,
+  2: StageType.FETCHING,
+  3: StageType.SCRAPING,
+  4: StageType.SCRAPING,
+  5: StageType.REASONING,
+}
 
 export function useAgentPipeline(vaultAddress: string) {
   const mockRun = isMockMode() ? getMockPipeline(vaultAddress) : null
@@ -25,22 +35,37 @@ export function useAgentPipeline(vaultAddress: string) {
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/vaults/${vaultAddress}/pipeline`)
+      const res = await fetch(`${API_URL}/api/pipeline/${vaultAddress}`)
       if (!res.ok) return
-      const data: PipelineRun = await res.json()
-      setRun(data)
-      setStage(data.currentStage)
-      setIsRunning(!data.completedAt)
-      const currentStageInfo = data.stages.find(s => s.type === data.currentStage)
-      if (currentStageInfo?.data) setStageData(currentStageInfo.data)
+      const data = await res.json()
+
+      const onChainStage = Number(data.stage ?? 0)
+      const flags = Number(data.flags ?? 0)
+      const isCompleted = Boolean(data.completed) || (flags & 8) !== 0
+      const isFailed = isCompleted && onChainStage !== 0 && data.data?.fetchedPrice === '0'
+
+      let mapped: StageTypeValue
+      if (isCompleted && !isFailed) {
+        mapped = StageType.COMPLETE
+      } else if (isFailed) {
+        mapped = StageType.IDLE
+      } else {
+        mapped = stageMap[onChainStage] ?? StageType.IDLE
+      }
+
+      setStage(mapped)
+      setIsRunning(!isCompleted && onChainStage > 0)
+      if (data.data) setStageData(data.data)
     } catch {
       // Pipeline endpoint may not exist yet
     }
   }, [vaultAddress])
 
+  useVaultEvents(fetchStatus)
+
   useEffect(() => {
     fetchStatus()
-    const interval = setInterval(fetchStatus, 5_000)
+    const interval = setInterval(fetchStatus, 10_000)
     return () => clearInterval(interval)
   }, [fetchStatus])
 
