@@ -33,7 +33,7 @@ async function main() {
   console.log('Balance:', (Number(balance) / 1e18).toFixed(2), 'STT');
 
   const strategyPrompt = process.env.STRATEGY_PROMPT ||
-    'BTC momentum strategy with fear/greed overlay. Go long when BTC shows upward momentum and Fear & Greed < 30 (extreme fear = buy opportunity). Go short when momentum is negative and Fear & Greed > 75 (extreme greed = sell signal). Use 15-25% position sizing. Set stops at 3% from entry.';
+    'ETH momentum strategy with fear/greed overlay. Go long when ETH shows upward momentum and Fear & Greed < 30 (extreme fear = buy opportunity). Go short when momentum is negative and Fear & Greed > 75 (extreme greed = sell signal). Use 15-25% position sizing. Set stops at 3% from entry.';
 
   const feeBps = parseInt(process.env.FEE_BPS || '1000'); // 10% default
   const maxDrawdownBps = BigInt(process.env.MAX_DRAWDOWN_BPS || '2000'); // 20% default
@@ -116,7 +116,7 @@ async function main() {
   console.log('2. Run: npx tsx src/scripts/register-subscriptions.ts');
   console.log('3. npx tsx src/scripts/fund-epoch-cron.ts');
   console.log('4. npx tsx src/scripts/fund-mirror-reactor.ts');
-  console.log('5. npx tsx src/scripts/fund-dex-adapter.ts  (requires USDso + WBTC on deployer)');
+  console.log('5. npx tsx src/scripts/fund-dex-adapter.ts  (requires USDso + WETH on deployer)');
 }
 
 main().catch((err) => {

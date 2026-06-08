@@ -143,7 +143,11 @@ function LivePipelineStatusPage({ vaultAddress }: { vaultAddress: Address; orche
       const res = await fetch(`${API_URL}/api/pipeline/${vaultAddress}/trigger`, { method: 'POST' })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        throw new Error((body as { error?: string }).error ?? `Trigger failed (${res.status})`)
+        const msg = (body as { error?: string }).error ?? `Trigger failed (${res.status})`
+        if (res.status === 409) {
+          await fetchStatus()
+        }
+        throw new Error(msg)
       }
       await fetchStatus()
     } catch (e: unknown) {

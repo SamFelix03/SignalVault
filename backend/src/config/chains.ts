@@ -6,7 +6,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import {
   CHAIN_ID, RPC_URL, WS_RPC_URL, EXPLORER_URL,
   VAULT_FACTORY_ADDRESS, PERFORMANCE_LEDGER_ADDRESS,
-  AGENT_REQUESTER_ADDRESS, BTC_USD_ORACLE, ETH_USD_ORACLE,
+  AGENT_REQUESTER_ADDRESS, ETH_USD_ORACLE,
 } from './constants';
 
 export const somniaTestnet = defineChain({
@@ -30,7 +30,6 @@ export const config = {
   vaultFactoryAddress: VAULT_FACTORY_ADDRESS || undefined,
   performanceLedgerAddress: PERFORMANCE_LEDGER_ADDRESS || undefined,
   agentRequesterAddress: AGENT_REQUESTER_ADDRESS,
-  btcUsdOracle: BTC_USD_ORACLE,
   ethUsdOracle: ETH_USD_ORACLE,
 };
 

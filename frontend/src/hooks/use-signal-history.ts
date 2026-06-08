@@ -7,6 +7,7 @@ import { vaultConfig } from '@/lib/contracts'
 import { isMockMode } from '@/lib/mock-mode'
 import { getMockSignals } from '@/lib/mock-data'
 import type { Signal } from '@/types/vault'
+import { sanitizeReasoning } from '@/lib/sanitize-pipeline-text'
 
 export function useSignalHistory(vaultAddress: string) {
   const [signals, setSignals] = useState<Signal[]>(
@@ -66,7 +67,7 @@ export function useSignalHistory(vaultAddress: string) {
           stopPrice: s.stopPrice,
           epoch: Number(s.epoch),
           reasoningHash: s.reasoningHash,
-          reasoning: s.reasoningSummary || undefined,
+          reasoning: sanitizeReasoning(s.reasoningSummary),
           timestamp: 0,
         })).reverse()
 

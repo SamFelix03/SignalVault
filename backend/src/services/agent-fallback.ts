@@ -8,7 +8,7 @@ const CTX = 'AgentFallback';
 
 const FNG_API = 'https://api.alternative.me/fng/?limit=1';
 const COINGECKO_FUNDING_URL =
-  'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true';
+  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true';
 const COINDESK_RSS_URL = 'https://www.coindesk.com/arc/outboundfeeds/rss/';
 
 export interface PipelineFallbackData {
@@ -66,8 +66,8 @@ export async function fetchFundingFromCoinGecko(): Promise<{
   raw: bigint;
   changePct: number;
 }> {
-  const data = await fetchJson<{ bitcoin?: { usd_24h_change?: number } }>(COINGECKO_FUNDING_URL);
-  const change = data.bitcoin?.usd_24h_change;
+  const data = await fetchJson<{ ethereum?: { usd_24h_change?: number } }>(COINGECKO_FUNDING_URL);
+  const change = data.ethereum?.usd_24h_change;
   if (change == null || Number.isNaN(change)) throw new Error('CoinGecko returned no 24h change');
 
   const raw = BigInt(Math.round(Math.abs(change) * 1e8));
@@ -147,7 +147,7 @@ export async function fetchPipelineFallbackData(): Promise<PipelineFallbackData>
     newsSource = newsResult.value.source;
   } else {
     logger.warn(CTX, 'News fallback failed', newsResult.reason);
-    newsSummary = `${fearGreedClassification} (Fear/Greed ${fearGreedIndex}/100). BTC 24h: ${fundingChangePct >= 0 ? '+' : ''}${fundingChangePct.toFixed(2)}%.`;
+    newsSummary = `${fearGreedClassification} (Fear/Greed ${fearGreedIndex}/100). ETH 24h: ${fundingChangePct >= 0 ? '+' : ''}${fundingChangePct.toFixed(2)}%.`;
   }
 
   const okCount = [fngResult, fundingResult, newsResult].filter((r) => r.status === 'fulfilled').length;

@@ -41,9 +41,9 @@ function makeSignal(
 export const mockVaults: VaultInfo[] = [
   {
     address: MOCK_VAULT_ADDRESSES[0],
-    name: 'BTC Momentum Alpha',
+    name: 'ETH Momentum Alpha',
     strategist: '0xAbCd111111111111111111111111111111111111',
-    strategyPrompt: 'BTC momentum strategy with fear/greed overlay. Go long on upward momentum when Fear & Greed < 30.',
+    strategyPrompt: 'ETH momentum strategy with fear/greed overlay. Go long on upward momentum when Fear & Greed < 30.',
     performanceFeeBps: 1000,
     followerCount: 24,
     createdAt: now - hour * 24 * 14,
@@ -58,7 +58,7 @@ export const mockVaults: VaultInfo[] = [
     currentSignal: makeSignal(
       1,
       2500,
-      95200,
+      3180,
       142,
       'Elevated funding but extreme fear (28) — maintain reduced long, tighten stop.',
       MOCK_RECEIPT_HASH,
@@ -69,7 +69,7 @@ export const mockVaults: VaultInfo[] = [
     address: MOCK_VAULT_ADDRESSES[1],
     name: 'Macro Sentiment Pro',
     strategist: '0xAbCd222222222222222222222222222222222222',
-    strategyPrompt: 'Macro-driven BTC strategy using CoinDesk sentiment and funding rate divergence.',
+    strategyPrompt: 'Macro-driven ETH strategy using CoinDesk sentiment and funding rate divergence.',
     performanceFeeBps: 1500,
     followerCount: 18,
     createdAt: now - hour * 24 * 21,
@@ -84,7 +84,7 @@ export const mockVaults: VaultInfo[] = [
     currentSignal: makeSignal(
       2,
       1800,
-      101500,
+      3450,
       141,
       'Hawkish macro headlines + crowded longs — rotate to short 18%.',
       '0xdef789abc123def789abc123def789abc123def789abc123def789abc123def7',
@@ -180,7 +180,7 @@ export interface MockVaultMeta {
 
 const mockMetaByVault: Record<string, MockVaultMeta> = {
   [MOCK_VAULT_ADDRESSES[0]]: {
-    name: 'BTC Momentum Alpha',
+    name: 'ETH Momentum Alpha',
     strategyPrompt: mockVaults[0].strategyPrompt,
     strategist: mockVaults[0].strategist,
     orchestrator: '0x00000000000000000000000000000000000000a001',
@@ -222,7 +222,7 @@ export const mockPipelineDetail = {
   runId: 42,
   stageNum: 5,
   startedAt: now - 120,
-  fetchedPrice: usd(98420),
+  fetchedPrice: usd(3420),
   fetchedFunding: BigInt('87000000000000'),
   fearGreedIndex: 28,
   newsSummary: 'Fed minutes hawkish, macro risk-off sentiment across crypto headlines.',
@@ -236,9 +236,9 @@ export const mockReceipt: AgentReceipt = {
   txHash: '0xmocktxhash1234567890abcdef1234567890abcdef1234567890abcdef1234',
   stages: {
     jsonApi: {
-      url: 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT',
-      rawResult: { symbol: 'BTCUSDT', price: '98420.50' },
-      extractedValue: '98420.50',
+      url: 'https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT',
+      rawResult: { symbol: 'ETHUSDT', price: '3420.50' },
+      extractedValue: '3420.50',
       validators: ['validator-1', 'validator-2', 'validator-3'],
     },
     parseWebsite: {
@@ -248,12 +248,12 @@ export const mockReceipt: AgentReceipt = {
       answerable: true,
     },
     inferToolsChat: {
-      systemPrompt: 'BTC momentum strategy with fear/greed overlay...',
-      userMessage: 'BTC/USDT: $98,420 | Funding: +0.087% | Fear&Greed: 28 | Macro: risk-off',
+      systemPrompt: 'ETH momentum strategy with fear/greed overlay...',
+      userMessage: 'ETH/USDT: $3,420 | Funding: +0.087% | Fear&Greed: 28 | Macro: risk-off',
       chainOfThought:
         'Funding is elevated suggesting crowded longs, but extreme fear and hawkish macro warrant reduced exposure rather than full exit.',
       toolCalled: 'updateSignal',
-      toolArguments: { direction: 1, sizeBps: 2500, stopPrice: 95200, reasoning: 'Reduced long on macro headwind.' },
+      toolArguments: { direction: 1, sizeBps: 2500, stopPrice: 3180, reasoning: 'Reduced long on macro headwind.' },
     },
   },
 }
@@ -261,9 +261,9 @@ export const mockReceipt: AgentReceipt = {
 export const mockFollowerPositions = [
   {
     vaultAddress: MOCK_VAULT_ADDRESSES[0],
-    vaultName: 'BTC Momentum Alpha',
+    vaultName: 'ETH Momentum Alpha',
     direction: 1,
-    entryPrice: 97850,
+    entryPrice: 3380,
     currentPnl: 420,
     pnlPercent: 4.3,
     stopPrice: 95200,
@@ -272,7 +272,7 @@ export const mockFollowerPositions = [
     vaultAddress: MOCK_VAULT_ADDRESSES[1],
     vaultName: 'Macro Sentiment Pro',
     direction: 2,
-    entryPrice: 100200,
+    entryPrice: 3410,
     currentPnl: -180,
     pnlPercent: -1.8,
     stopPrice: 101500,

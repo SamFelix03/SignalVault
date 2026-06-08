@@ -62,7 +62,7 @@ contract DreamDexAdapter is IDreamDEX {
         (baseToken, quoteToken,,,,,) = spotPool.getPoolParams();
     }
 
-    /// @notice Fund the adapter's dreamDEX vault balance (USDso for WBTC pool bids).
+    /// @notice Fund the adapter's dreamDEX vault balance (USDso for WETH pool bids).
     function depositQuote(uint256 amount) external {
         require(amount > 0, "zero amount");
         require(IERC20(quoteToken).transferFrom(msg.sender, address(this), amount), "transfer failed");
@@ -71,7 +71,7 @@ contract DreamDexAdapter is IDreamDEX {
         emit QuoteDeposited(msg.sender, amount);
     }
 
-    /// @notice Fund base token (WBTC) for IOC asks / short mirrors.
+    /// @notice Fund base token (WETH) for IOC asks / short mirrors.
     function depositBase(uint256 amount) external {
         require(amount > 0, "zero amount");
         require(IERC20(baseToken).transferFrom(msg.sender, address(this), amount), "transfer failed");
@@ -151,8 +151,8 @@ contract DreamDexAdapter is IDreamDEX {
         uint256 lotSize
     ) internal pure returns (uint256) {
         if (price == 0 || quoteNotional == 0) return 0;
-        // quoteNotional (18 dec USDso) → base quantity; WBTC uses 8 decimals on testnet.
-        uint256 qty = (quoteNotional * 1e8) / price;
+        // quoteNotional (18 dec USDso) → base quantity; WETH uses 18 decimals on testnet.
+        uint256 qty = (quoteNotional * 1e18) / price;
         if (lotSize > 0) qty = (qty / lotSize) * lotSize;
         if (qty < minQuantity) return 0;
         return qty;

@@ -59,9 +59,9 @@ contract VaultFactory {
 
     // Somnia platform constants
     address public constant AGENT_PLATFORM = 0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776;
-    // Somnia testnet Protofire BTC/USD (mainnet proxy: 0xa57d6376...)
-    address public constant BTC_USD_ORACLE = 0x8CeE6c58b8CbD8afdEaF14e6fCA0876765e161fE;
-    address public constant DREAMDEX_WBTC_POOL = 0x3605f28aA7C50e7441211e77Cb0762d49539326C;
+    // Somnia testnet Protofire ETH/USD (mainnet proxy: 0x5f4eC3Df...)
+    address public constant ETH_USD_ORACLE = 0xd9132c1d762D432672493F640a63B758891B449e;
+    address public constant DREAMDEX_WETH_POOL = 0xD180195da5459C7a0DEA188ed61216ec43682b50;
 
     address public owner;
     address public dexAddress;
@@ -195,14 +195,14 @@ contract VaultFactory {
         uint256 maxDrawdownBps
     ) internal {
         dep.mirrorReactor = implMirrorReactor.clone();
-        address dexAdapter = address(new DreamDexAdapter(DREAMDEX_WBTC_POOL, dep.mirrorReactor));
+        address dexAdapter = address(new DreamDexAdapter(DREAMDEX_WETH_POOL, dep.mirrorReactor));
         IInitMirror(dep.mirrorReactor).initialize(dep.strategist, dep.vault, dexAdapter);
 
         dep.stopReactor = implStopReactor.clone();
         IInitStop(dep.stopReactor).initialize(dep.strategist, dep.vault, dexAdapter);
 
         dep.performanceLedger = implPerformanceLedger.clone();
-        IInitLedger(dep.performanceLedger).initialize(address(this), dep.vault, BTC_USD_ORACLE);
+        IInitLedger(dep.performanceLedger).initialize(address(this), dep.vault, ETH_USD_ORACLE);
 
         dep.drawdownGuard = implDrawdownGuard.clone();
         IInitDrawdown(dep.drawdownGuard).initialize(dep.strategist, dep.vault, dep.performanceLedger, maxDrawdownBps);

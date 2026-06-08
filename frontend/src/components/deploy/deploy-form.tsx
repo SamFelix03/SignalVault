@@ -122,7 +122,7 @@ export function DeployForm() {
                 id="vaultName"
                 value={vaultName}
                 onChange={e => setVaultName(e.target.value)}
-                placeholder="e.g. BTC Momentum Alpha"
+                placeholder="e.g. ETH Momentum Alpha"
                 className="border-border/80 bg-secondary/30 focus:bg-background"
               />
             </FormSection>
@@ -140,7 +140,7 @@ export function DeployForm() {
                 value={strategyPrompt}
                 onChange={e => setStrategyPrompt(e.target.value)}
                 rows={5}
-                placeholder="e.g. Momentum breakout on BTC/USDC. Max 20% drawdown. Exit if funding rate exceeds 0.1%. Reduce size when Fear & Greed below 30..."
+                placeholder="e.g. Momentum breakout on ETH/USDso. Max 20% drawdown. Exit if funding rate exceeds 0.1%. Reduce size when Fear & Greed below 30..."
                 className="resize-none border-border/80 bg-secondary/30 focus:bg-background"
               />
             </FormSection>

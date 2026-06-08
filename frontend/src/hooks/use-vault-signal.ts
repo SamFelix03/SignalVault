@@ -7,6 +7,7 @@ import { vaultConfig, API_URL } from '@/lib/contracts'
 import { isMockMode } from '@/lib/mock-mode'
 import { getMockVault } from '@/lib/mock-data'
 import type { Signal } from '@/types/vault'
+import { sanitizeReasoning } from '@/lib/sanitize-pipeline-text'
 
 function toSignedInt8(value: unknown): number {
   const n = Number(value ?? 0)
@@ -48,7 +49,7 @@ function parseCurrentSignal(data: unknown): Signal | undefined {
     stopPrice,
     epoch,
     reasoningHash,
-    reasoning: reasoningSummary || undefined,
+    reasoning: sanitizeReasoning(reasoningSummary),
     timestamp: 0,
   }
 }

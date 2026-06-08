@@ -3,6 +3,7 @@ import { publicClient, config } from '../config/chains';
 import { VaultFactoryABI } from '../abis/VaultFactory';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { logger } from '../utils/logger';
+import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import { eventBus } from './event-bus';
 
 const CTX = 'VaultIndexer';
@@ -161,7 +162,7 @@ class VaultIndexer {
           stopPrice: signal.stopPrice.toString(),
           epoch: signal.epoch.toString(),
           reasoningHash: signal.reasoningHash,
-          reasoningSummary: signal.reasoningSummary,
+          reasoningSummary: sanitizePipelineText(signal.reasoningSummary),
         };
       } catch { /* no signal yet */ }
 
@@ -224,7 +225,7 @@ class VaultIndexer {
             stopPrice: signal.stopPrice.toString(),
             epoch: signal.epoch.toString(),
             reasoningHash: signal.reasoningHash,
-            reasoningSummary: signal.reasoningSummary,
+            reasoningSummary: sanitizePipelineText(signal.reasoningSummary),
           };
           vault.currentSignal = next;
 

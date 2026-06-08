@@ -13,8 +13,8 @@ interface IPerformanceLedger {
 }
 
 contract AgentOrchestrator is IAgentRequesterHandler {
-    // Somnia testnet Protofire BTC/USD (mainnet proxy: 0xa57d6376...)
-    address public constant BTC_USD_ORACLE = 0x8CeE6c58b8CbD8afdEaF14e6fCA0876765e161fE;
+    // Somnia testnet Protofire ETH/USD (mainnet proxy: 0x5f4eC3Df...)
+    address public constant ETH_USD_ORACLE = 0xd9132c1d762D432672493F640a63B758891B449e;
     IAgentRequester public platform;
 
     uint256 public constant JSON_API_AGENT_ID = 13174292974160097713;
@@ -51,10 +51,10 @@ contract AgentOrchestrator is IAgentRequesterHandler {
     mapping(uint256 => uint256) public requestToRun;
     mapping(uint256 => bool) public pendingRequests;
 
-    string public constant PRICE_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
-    string public constant PRICE_SELECTOR = "bitcoin.usd";
-    string public constant FUNDING_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true";
-    string public constant FUNDING_SELECTOR = "bitcoin.usd_24h_change";
+    string public constant PRICE_URL = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd";
+    string public constant PRICE_SELECTOR = "ethereum.usd";
+    string public constant FUNDING_URL = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true";
+    string public constant FUNDING_SELECTOR = "ethereum.usd_24h_change";
 
     event PipelineStarted(uint256 indexed runId, uint256 timestamp);
     event StageCompleted(uint256 indexed runId, string stage, uint256 requestId);
@@ -143,15 +143,13 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         }
         if (bytes(run.newsSummary).length == 0) {
             run.newsSummary = string(abi.encodePacked(
-                "Agents timed out after ",
-                _uint2str(PIPELINE_TIMEOUT),
-                "s. BTC $",
+                "ETH $",
                 _uint2str(run.fetchedPrice / 100),
                 ".",
                 _pad2(run.fetchedPrice % 100),
                 ", Fear/Greed ",
                 _uint2str(run.fearGreedIndex),
-                "/100 - rule-based completion."
+                "/100."
             ));
         }
 
@@ -221,7 +219,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         }
     }
 
-    // ── Stage 1a: On-chain oracle — BTC Price ───────────────────────────
+    // ── Stage 1a: On-chain oracle — ETH Price ───────────────────────────
 
     function _bootstrapOraclePrice(uint256 runId) internal {
         PipelineRun storage run = runs[runId];
@@ -232,14 +230,14 @@ contract AgentOrchestrator is IAgentRequesterHandler {
     }
 
     function _readOraclePriceCents() internal view returns (uint256) {
-        (, int256 answer,,,) = AggregatorV3Interface(BTC_USD_ORACLE).latestRoundData();
+        (, int256 answer,,,) = AggregatorV3Interface(ETH_USD_ORACLE).latestRoundData();
         require(answer > 0, "invalid oracle");
         // Chainlink-style 8-decimal USD price → cents (2 decimals)
         return uint256(answer) / 1e6;
     }
 
     function _readOraclePriceWei() internal view returns (uint256) {
-        (, int256 answer,,,) = AggregatorV3Interface(BTC_USD_ORACLE).latestRoundData();
+        (, int256 answer,,,) = AggregatorV3Interface(ETH_USD_ORACLE).latestRoundData();
         require(answer > 0, "invalid oracle");
         return uint256(answer) * 1e10;
     }
@@ -350,9 +348,9 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         bytes memory payload = abi.encodeWithSelector(
             ILLMParseAgent.ExtractString.selector,
             "macro_summary",                                             // key
-            "A one-sentence summary of the current Bitcoin/crypto macro sentiment from recent headlines", // description
+            "A one-sentence summary of the current Ethereum/crypto macro sentiment from recent headlines", // description
             options,                                                     // no constrained options
-            "Bitcoin crypto market sentiment macro outlook latest news",  // prompt
+            "Ethereum crypto market sentiment macro outlook latest news",  // prompt
             "coindesk.com",                                              // url (domain search)
             true,                                                        // resolveUrl
             uint8(2),                                                    // numPages
@@ -412,7 +410,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
 
         messages[1] = string(abi.encodePacked(
             "Current market state:\n",
-            "- BTC/USDT spot price: $", _uint2str(run.fetchedPrice / 100), ".", _uint2str(run.fetchedPrice % 100), "\n",
+            "- ETH/USDT spot price: $", _uint2str(run.fetchedPrice / 100), ".", _uint2str(run.fetchedPrice % 100), "\n",
             "- Funding rate: ", _uint2str(run.fetchedFunding), " (8 decimals, raw)\n",
             "- Fear & Greed Index: ", _uint2str(run.fearGreedIndex), "/100\n",
             "- Macro headline: ", run.newsSummary, "\n",
@@ -632,7 +630,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
 
         reasoningHash = keccak256(abi.encodePacked(price, run.fearGreedIndex, run.newsSummary));
         reasoning = string(abi.encodePacked(
-            "Rule-based signal: BTC $",
+            "ETH $",
             _uint2str(price / 100),
             ".",
             _pad2(price % 100),

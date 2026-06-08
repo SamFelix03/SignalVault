@@ -6,6 +6,7 @@ import { useVaultEvents } from '@/hooks/use-vault-events'
 import { isMockMode } from '@/lib/mock-mode'
 import { mockVaults } from '@/lib/mock-data'
 import type { VaultInfo, Signal } from '@/types/vault'
+import { sanitizeReasoning } from '@/lib/sanitize-pipeline-text'
 
 interface BackendVault {
   address: string
@@ -34,7 +35,7 @@ function mapVault(v: BackendVault): VaultInfo {
     stopPrice: BigInt(sig?.stopPrice ?? '0'),
     epoch: Number(sig?.epoch ?? 0),
     reasoningHash: sig?.reasoningHash ?? '',
-    reasoning: sig?.reasoningSummary,
+    reasoning: sanitizeReasoning(sig?.reasoningSummary),
     timestamp: 0,
   }
 

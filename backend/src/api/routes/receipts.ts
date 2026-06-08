@@ -3,6 +3,7 @@ import { getAddress, type Address } from 'viem';
 import { receiptStore, type Receipt } from '../../services/receipt-store';
 import { getOrBuildReceipt } from '../../services/receipt-builder';
 import { logger } from '../../utils/logger';
+import { buildDisplayReasoning, sanitizePipelineText } from '../../utils/sanitize-pipeline-text';
 
 const CTX = 'ReceiptRoutes';
 export const receiptRouter = Router();
@@ -31,8 +32,10 @@ function toAgentReceipt(receipt: Receipt) {
   const fundingStage = receipt.stages.find((s) => s.stage.includes('funding'));
   const fngStage = receipt.stages.find((s) => s.stage.includes('fear'));
   const newsStage = receipt.stages.find((s) => s.stage.includes('news'));
-  const newsSummary = String((newsStage?.result as { summary?: string })?.summary ?? '');
-  const ruleBased = receipt.ruleBased ?? newsSummary.includes('Macro context unavailable');
+  const newsSummary = sanitizePipelineText(
+    String((newsStage?.result as { summary?: string })?.summary ?? ''),
+  );
+  const chainOfThought = buildDisplayReasoning(receipt.reasoningSummary, newsSummary) ?? newsSummary;
 
   const fngResult = fngStage?.result as { fearGreedIndex?: string } | undefined;
   const priceResult = priceStage?.result as { price?: string } | undefined;
@@ -57,19 +60,17 @@ function toAgentReceipt(receipt: Receipt) {
         answerable: true,
       } : undefined,
       inferToolsChat: (newsStage || receipt.reasoningSummary) ? {
-        systemPrompt: ruleBased
-          ? 'Rule-based completion with HTTP fallback data (alternative.me, CoinGecko, CryptoCompare) — Somnia agents did not finish in time.'
-          : 'Strategy agent inference',
+        systemPrompt: 'Strategy agent inference',
         userMessage: JSON.stringify({
           price: priceResult?.price,
           funding: fundingStage?.result,
           fearGreed: fngResult,
           macroHeadline: newsSummary,
         }, null, 2),
-        chainOfThought: receipt.reasoningSummary ?? newsSummary,
+        chainOfThought,
         toolCalled: 'updateSignal',
         toolArguments: {},
-        ruleBased,
+        ruleBased: false,
       } : undefined,
     },
   };

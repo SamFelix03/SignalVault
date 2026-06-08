@@ -7,6 +7,7 @@ import { SIGNAL_SCHEMA, PNL_SCHEMA, VAULT_META_SCHEMA } from '../config/schemas'
 import { WS_RPC_URL } from '../config/constants';
 import { vaultIndexer } from './vault-indexer';
 import { logger } from '../utils/logger';
+import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import {
   decodeSignalUpdated,
   decodeTradeSettled,
@@ -203,7 +204,7 @@ class StreamPublisher {
         { name: 'sizeBps', value: BigInt(decoded.sizeBps), type: 'uint16' },
         { name: 'stopPrice', value: decoded.stopPrice, type: 'uint256' },
         { name: 'reasoningHash', value: decoded.reasoningHash, type: 'bytes32' },
-        { name: 'reasoning', value: decoded.reasoningSummary, type: 'string' },
+        { name: 'reasoning', value: sanitizePipelineText(decoded.reasoningSummary), type: 'string' },
       ]);
 
       const dataId = toHex(`signal-${Date.now()}`, { size: 32 });
@@ -218,7 +219,7 @@ class StreamPublisher {
         sizeBps: decoded.sizeBps,
         stopPrice: decoded.stopPrice.toString(),
         reasoningHash: decoded.reasoningHash,
-        reasoningSummary: decoded.reasoningSummary,
+        reasoningSummary: sanitizePipelineText(decoded.reasoningSummary),
         epoch: now.toString(),
       });
     } catch (err) {

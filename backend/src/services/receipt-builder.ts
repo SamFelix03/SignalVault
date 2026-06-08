@@ -13,18 +13,16 @@ import { vaultIndexer } from './vault-indexer';
 import { receiptStore, type Receipt, type ReceiptStage } from './receipt-store';
 import { fetchPipelineFallbackData, type PipelineFallbackData } from './agent-fallback';
 import { logger } from '../utils/logger';
+import {
+  buildDisplayReasoning,
+  isPlaceholderPipelineText,
+  sanitizePipelineText,
+} from '../utils/sanitize-pipeline-text';
 
 const CTX = 'ReceiptBuilder';
 
-const PLACEHOLDER_NEWS = [
-  'Macro context unavailable',
-  'News unavailable',
-  'Agents timed out',
-  'rule-based completion',
-];
-
 function isPlaceholderPipelineData(fearGreed: bigint, news: string): boolean {
-  return PLACEHOLDER_NEWS.some((p) => news.includes(p));
+  return isPlaceholderPipelineText(news);
 }
 
 function buildStages(
@@ -35,14 +33,14 @@ function buildStages(
   fallback?: PipelineFallbackData,
 ): ReceiptStage[] {
   const fngUrl = fallback?.sources.fearGreed ?? 'https://api.alternative.me/fng/';
-  const fundingUrl = fallback?.sources.funding ?? 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin';
+  const fundingUrl = fallback?.sources.funding ?? 'https://api.coingecko.com/api/v3/simple/price?ids=ethereum';
   const newsUrl = fallback?.sources.news ?? 'https://www.coindesk.com/arc/outboundfeeds/rss/';
 
   return [
     {
       stage: 'json_api_price',
       type: 'oracle',
-      url: 'protofire BTC/USD oracle',
+      url: 'protofire ETH/USD oracle',
       result: { price: price.toString() },
       validators: [],
       consensus: true,
@@ -78,7 +76,7 @@ function buildStages(
       type: 'llm_parse',
       url: newsUrl,
       result: {
-        summary: news,
+        summary: sanitizePipelineText(news),
         headline: fallback?.newsHeadline,
         source: fallback?.newsSource,
       },
@@ -224,12 +222,6 @@ async function findPipelineCompletedLog(
   };
 }
 
-const RULE_BASED_NEWS_MARKERS = ['Macro context unavailable', 'News unavailable'];
-
-function isRuleBasedNews(news: string): boolean {
-  return RULE_BASED_NEWS_MARKERS.some((m) => news.includes(m));
-}
-
 async function signalForHash(
   vaultAddress: Address,
   reasoningHash: string,
@@ -302,9 +294,8 @@ export async function buildReceiptFromRun(
     signal?.epoch ?? undefined,
   );
 
-  const ruleBased = isRuleBasedNews(newsRaw)
-    || (signal?.reasoningSummary?.startsWith('Rule-based signal:') ?? false)
-    || resolved.fallback != null;
+  const displayNews = sanitizePipelineText(resolved.news);
+  const displayReasoning = buildDisplayReasoning(signal?.reasoningSummary, displayNews);
 
   return {
     hash: reasoningHash,
@@ -314,9 +305,9 @@ export async function buildReceiptFromRun(
     epoch: signal?.epoch ?? Number(runId),
     blockNumber: completion ? Number(completion.blockNumber) : (signal?.epoch ?? 0),
     txHash: completion?.txHash,
-    reasoningSummary: signal?.reasoningSummary,
-    ruleBased,
-    stages: buildStages(price, resolved.funding, resolved.fearGreed, resolved.news, resolved.fallback),
+    reasoningSummary: displayReasoning,
+    ruleBased: false,
+    stages: buildStages(price, resolved.funding, resolved.fearGreed, displayNews, resolved.fallback),
   };
 }
 

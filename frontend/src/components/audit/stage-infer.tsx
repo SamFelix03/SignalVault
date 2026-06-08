@@ -9,7 +9,7 @@ interface StageInferProps {
 }
 
 export function StageInfer({ data }: StageInferProps) {
-  const title = data.ruleBased ? 'Rule-Based Signal' : 'LLM inferToolsChat'
+  const title = 'LLM inferToolsChat'
 
   return (
     <StageCard title={title} stageNumber={3} icon={<Brain className="h-4 w-4" />}>

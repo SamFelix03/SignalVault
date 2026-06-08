@@ -12,6 +12,11 @@ import { AgentOrchestratorABI } from '../../abis/AgentOrchestrator';
 import { JSON_FETCH_COST, LLM_PARSE_COST, LLM_INFER_COST } from '../../config/constants';
 import { logger } from '../../utils/logger';
 import { eventBus } from '../../services/event-bus';
+import { fetchPipelineFallbackData } from '../../services/agent-fallback';
+import {
+  isPlaceholderPipelineText,
+  sanitizePipelineText,
+} from '../../utils/sanitize-pipeline-text';
 
 const CTX = 'PipelineRoutes';
 export const pipelineRouter = Router();
@@ -64,6 +69,18 @@ pipelineRouter.get('/:vaultAddress', async (req: Request, res: Response) => {
     const completed = (flags & 8) !== 0;
     const sync = await syncPipelineRun(orchestratorAddress, currentRunId);
 
+    let newsSummary = String(data[3] ?? '');
+    if (isPlaceholderPipelineText(newsSummary)) {
+      try {
+        const fallback = await fetchPipelineFallbackData();
+        newsSummary = fallback.newsSummary;
+      } catch {
+        newsSummary = sanitizePipelineText(newsSummary);
+      }
+    } else {
+      newsSummary = sanitizePipelineText(newsSummary);
+    }
+
     res.json({
       runId: currentRunId.toString(),
       stage: status[0],
@@ -77,7 +94,7 @@ pipelineRouter.get('/:vaultAddress', async (req: Request, res: Response) => {
         fetchedPrice: data[0].toString(),
         fetchedFunding: data[1].toString(),
         fearGreedIndex: data[2].toString(),
-        newsSummary: data[3],
+        newsSummary,
       },
     });
   } catch (err) {
@@ -96,6 +113,30 @@ pipelineRouter.post('/:vaultAddress/trigger', async (req: Request, res: Response
     }
 
     const orchestratorAddress = vault.orchestrator;
+
+    const currentRunId = await publicClient.readContract({
+      address: orchestratorAddress,
+      abi: AgentOrchestratorABI,
+      functionName: 'currentRunId',
+    }) as bigint;
+
+    if (currentRunId > 0n) {
+      const [, flags] = await publicClient.readContract({
+        address: orchestratorAddress,
+        abi: AgentOrchestratorABI,
+        functionName: 'getPipelineStatus',
+        args: [currentRunId],
+      }) as [number, number, bigint];
+
+      if ((flags & 8) === 0) {
+        res.status(409).json({
+          error: 'Pipeline already running',
+          runId: currentRunId.toString(),
+        });
+        return;
+      }
+    }
+
     const walletClient = getWalletClient();
     const agentBudget = JSON_FETCH_COST + LLM_PARSE_COST + LLM_INFER_COST;
 

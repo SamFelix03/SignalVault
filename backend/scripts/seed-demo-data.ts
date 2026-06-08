@@ -27,9 +27,9 @@ async function seedDemoData(): Promise<void> {
   // Publish sample signals
   const signalEncoder = new SchemaEncoder(SIGNAL_SCHEMA);
   const signals = [
-    { direction: 1, sizeBps: 2500, stopPrice: BigInt('60000000000000000000000'), reasoning: 'BTC breaking above resistance at 60k, momentum indicators bullish' },
-    { direction: -1, sizeBps: 1500, stopPrice: BigInt('62000000000000000000000'), reasoning: 'Bearish divergence on 4h RSI, taking short position' },
-    { direction: 1, sizeBps: 3000, stopPrice: BigInt('58000000000000000000000'), reasoning: 'Strong support bounce at 58k, volume confirmation' },
+    { direction: 1, sizeBps: 2500, stopPrice: BigInt('3200000000000000000000'), reasoning: 'ETH breaking above resistance at 3200, momentum indicators bullish' },
+    { direction: -1, sizeBps: 1500, stopPrice: BigInt('3400000000000000000000'), reasoning: 'Bearish divergence on 4h RSI, taking short position' },
+    { direction: 1, sizeBps: 3000, stopPrice: BigInt('3100000000000000000000'), reasoning: 'Strong support bounce at 3100, volume confirmation' },
   ];
 
   for (let i = 0; i < signals.length; i++) {

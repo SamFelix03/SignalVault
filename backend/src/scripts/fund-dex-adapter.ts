@@ -1,5 +1,5 @@
 /**
- * Funds DreamDexAdapter with USDso (longs) and optionally WBTC (shorts) for mirror IOC orders.
+ * Funds DreamDexAdapter with USDso (longs) and optionally WETH (shorts) for mirror IOC orders.
  * Run: npx tsx src/scripts/fund-dex-adapter.ts
  */
 import {
@@ -92,12 +92,12 @@ async function main() {
   console.log('MirrorReactor:', mirror);
   console.log('DreamDexAdapter:', adapter);
   console.log('Quote token (USDso):', quoteToken);
-  console.log('Base token (WBTC):', baseToken);
+  console.log('Base token (WETH):', baseToken);
 
   const quoteAmount = parseUnits(process.env.DEX_QUOTE_USDSO || '50', 18);
-  const baseAmount = process.env.DEX_BASE_WBTC === '0'
+  const baseAmount = process.env.DEX_BASE_WETH === '0'
     ? 0n
-    : parseUnits(process.env.DEX_BASE_WBTC || '0.001', 8);
+    : parseUnits(process.env.DEX_BASE_WETH || '0.01', 18);
 
   console.log('\nDepositing to dreamDEX pool vault via adapter...');
   if (quoteAmount > 0n) {
