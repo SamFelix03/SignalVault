@@ -7,6 +7,7 @@ import { isMockMode } from '@/lib/mock-mode'
 import { mockVaults } from '@/lib/mock-data'
 import type { VaultInfo, Signal } from '@/types/vault'
 import { sanitizeReasoning } from '@/lib/sanitize-pipeline-text'
+import { parseVaultStrategyPrompt } from '@/lib/vault-strategy'
 
 interface BackendVault {
   address: string
@@ -39,11 +40,13 @@ function mapVault(v: BackendVault): VaultInfo {
     timestamp: 0,
   }
 
+  const { name, prompt } = parseVaultStrategyPrompt(v.strategyPrompt ?? '')
+
   return {
     address: v.address,
-    name: v.strategyPrompt?.slice(0, 50) || 'Strategy Vault',
+    name,
     strategist: v.strategist,
-    strategyPrompt: v.strategyPrompt,
+    strategyPrompt: prompt,
     performanceFeeBps: v.performanceFeeBps,
     currentSignal: signal,
     stats: { totalPnl: 0, sharpeRatio: 0, winRate: 0, maxDrawdown: 0, tradeCount: 0, followerCount: v.followerCount ?? 0 },

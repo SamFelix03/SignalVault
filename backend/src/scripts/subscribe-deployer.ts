@@ -20,9 +20,9 @@ async function main() {
     abi: vaultAbi,
     functionName: 'getFollowerConfig',
     args: [account.address],
-  }) as { active: boolean };
+  }) as readonly [number, bigint, number, bigint, boolean];
 
-  if (config.active) {
+  if (config[4]) {
     console.log('Already subscribed:', account.address);
     return;
   }

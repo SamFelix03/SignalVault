@@ -38,7 +38,7 @@ async function main() {
 
   console.log('\nTriggering pipeline...');
   const trigger = await fetch(`${API}/api/pipeline/${vault}/trigger`, { method: 'POST' });
-  const triggerBody = await trigger.json();
+  const triggerBody = await trigger.json() as { runId?: number | string };
   console.log('  Trigger status:', trigger.status, triggerBody);
 
   const runId = BigInt(String(triggerBody.runId ?? 1));
@@ -46,7 +46,7 @@ async function main() {
 
   while (Date.now() < deadline) {
     const res = await fetch(`${API}/api/pipeline/${vault}`);
-    const body = await res.json();
+    const body = await res.json() as { flags?: number; completed?: boolean; stage?: string | number };
     const flags = Number(body.flags ?? 0);
     const completed = Boolean(body.completed) || (flags & 8) !== 0;
     console.log(`  [${new Date().toISOString().slice(11, 19)}] stage=${body.stage} flags=${flags} completed=${completed}`);

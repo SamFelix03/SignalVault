@@ -36,6 +36,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import type { VaultStats } from '@/types/vault'
+import { parseVaultStrategyPrompt } from '@/lib/vault-strategy'
 
 export default function VaultDetailPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = use(params)
@@ -57,14 +58,18 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
     query: { enabled: !isMockMode() },
   })
 
-  const vaultName = isMockMode()
-    ? (mockVault?.name ?? 'Mock Vault')
-    : strategyPrompt
-      ? (strategyPrompt as string).slice(0, 50) + '...'
-      : 'Strategy Vault'
+  const parsedStrategy = isMockMode()
+    ? {
+        name: mockVault?.name ?? 'Mock Vault',
+        prompt: mockVault?.strategyPrompt ?? '',
+      }
+    : parseVaultStrategyPrompt((strategyPrompt as string) ?? '')
+
+  const vaultName = parsedStrategy.name
+  const strategyText = parsedStrategy.prompt
 
   useEffect(() => {
-    setTitle(vaultName as string)
+    setTitle(vaultName)
     return () => setTitle(null)
   }, [vaultName, setTitle])
 
@@ -149,10 +154,17 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbPage className="max-w-[200px] truncate">{vaultName as string}</BreadcrumbPage>
+            <BreadcrumbPage className="max-w-[200px] truncate">{vaultName}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
+
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{vaultName}</h1>
+        {strategyText ? (
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">{strategyText}</p>
+        ) : null}
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <AddressBadge address={address} />

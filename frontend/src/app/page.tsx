@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useVaultList } from '@/hooks/use-vault-list'
-import { VaultCard } from '@/components/leaderboard/vault-card'
 import { FeaturedVaultCard } from '@/components/leaderboard/featured-vault-card'
 import { LeaderboardStats } from '@/components/leaderboard/leaderboard-stats'
 import { LoadingSpinner } from '@/components/common/loading-spinner'
@@ -39,6 +38,7 @@ export default function LeaderboardPage() {
       list = list.filter(
         v =>
           v.name?.toLowerCase().includes(q) ||
+          v.strategyPrompt?.toLowerCase().includes(q) ||
           v.address.toLowerCase().includes(q) ||
           v.strategist?.toLowerCase().includes(q)
       )
@@ -59,9 +59,6 @@ export default function LeaderboardPage() {
 
     return list
   }, [vaults, search, sortBy])
-
-  const featured = filtered[0]
-  const rest = filtered.slice(1)
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -125,28 +122,15 @@ export default function LeaderboardPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-6">
-          {featured && !search && <FeaturedVaultCard vault={featured} />}
-
-          {(search ? filtered : rest).length > 0 && (
-            <div>
-              {!search && rest.length > 0 && (
-                <p className="mb-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Other vaults
-                </p>
-              )}
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {(search ? filtered : rest).map((vault, i) => (
-                  <VaultCard
-                    key={vault.address}
-                    vault={vault}
-                    index={i}
-                    rank={search ? undefined : i + 2}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+        <div className="space-y-4">
+          {filtered.map((vault, i) => (
+            <FeaturedVaultCard
+              key={vault.address}
+              vault={vault}
+              index={i}
+              rank={i + 1}
+            />
+          ))}
         </div>
       )}
     </div>
