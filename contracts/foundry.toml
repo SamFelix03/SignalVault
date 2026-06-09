@@ -13,4 +13,4 @@ gas_estimate_multiplier = 300
 somnia_testnet = "https://api.infra.testnet.somnia.network/"
 
 [etherscan]
-somnia_testnet = { key = "placeholder", url = "https://shannon-explorer.somnia.network/api" }
+somnia_testnet = { key = "placeholder", url = "https://shannon-explorer.somnia.network/api/", chain = 50312 }
