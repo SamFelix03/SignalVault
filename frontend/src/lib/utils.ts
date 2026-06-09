@@ -16,8 +16,8 @@ export function formatPrice(price: number | bigint, decimals = 2): string {
 }
 
 /** dreamDEX pool price / notional in raw on-chain units → USD display */
-export function formatPoolPrice(raw: number | bigint): string {
-  const n = typeof raw === 'bigint' ? Number(raw) : raw
+export function formatPoolPrice(raw: number | bigint | string): string {
+  const n = typeof raw === 'bigint' ? Number(raw) : typeof raw === 'string' ? Number(raw) : raw
   if (n === 0) return '—'
   const usd = n > 1e15 ? n / 1e14 : n > 1e6 ? n / 100 : n
   return usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
