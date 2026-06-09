@@ -26,13 +26,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    vaults: vaultIndexer.getAllVaults().length,
+app
+  .route('/health')
+  .get((_req, res) => {
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      vaults: vaultIndexer.getAllVaults().length,
+    });
+  })
+  .head((_req, res) => {
+    res.status(200).end();
   });
-});
 
 app.use('/api/vaults', vaultRouter);
 app.use('/api/receipts', receiptRouter);
