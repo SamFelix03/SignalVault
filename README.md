@@ -10,7 +10,7 @@ SignalVault solves copy trading's fundamental trust problem: followers cannot ve
 
 | Resource | URL |
 |----------|-----|
-| **Live Demo** | *Coming soon* |
+| **Live Demo** | [View](https://signal-vault-nine.vercel.app/) |
 | **Demo Video** | *Coming soon* |
 | **Pitch Deck** | *Coming soon* |
 
