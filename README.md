@@ -11,8 +11,8 @@ SignalVault solves copy trading's fundamental trust problem: followers cannot ve
 | Resource | URL |
 |----------|-----|
 | **Live Demo** | [View](https://signal-vault-nine.vercel.app/) |
-| **Demo Video** | [View](https://canva.link/9hr2s7qh8vzlrok) |
-| **Pitch Deck** | *Coming soon* |
+| **Demo Video** | [View](https://www.youtube.com/watch?v=D4WimohUULY) |
+| **Pitch Deck** | [View](https://canva.link/9hr2s7qh8vzlrok) |
 
 ### Deployed Contracts (Somnia Shannon — Chain `50312`)
 
