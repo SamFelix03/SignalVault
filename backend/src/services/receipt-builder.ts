@@ -9,10 +9,12 @@ import {
 import { publicClient } from '../config/chains';
 import { AgentOrchestratorABI } from '../abis/AgentOrchestrator';
 import { StrategyVaultABI } from '../abis/StrategyVault';
-import { vaultIndexer } from './vault-indexer';
+import { vaultIndexer, isCustomAgentVault } from './vault-indexer';
 import { computeOnChainSignalHash } from './mirror-worker';
 import { receiptStore, type Receipt, type ReceiptStage } from './receipt-store';
 import { fetchPipelineFallbackData, resolveMacroNewsSummary, type PipelineFallbackData } from './agent-fallback';
+import { fetchEthUsdCents } from './mark-price';
+import { decodeSignalUpdated } from '../utils/decoder';
 import { logger } from '../utils/logger';
 import {
   buildDisplayReasoning,
@@ -141,6 +143,9 @@ export async function findRunIdForReasoningHash(
   orchestrator: Address,
   reasoningHash: string,
 ): Promise<bigint | null> {
+  const vault = vaultIndexer.getVaultByOrchestrator(orchestrator);
+  if (isCustomAgentVault(vault)) return null;
+
   const normalized = reasoningHash.toLowerCase();
   const currentRunId = await publicClient.readContract({
     address: orchestrator,
@@ -271,6 +276,118 @@ async function signalForHash(
 async function signalEpochForHash(vaultAddress: Address, reasoningHash: string): Promise<number | null> {
   const signal = await signalForHash(vaultAddress, reasoningHash);
   return signal?.epoch ?? null;
+}
+
+const SIGNAL_UPDATED = parseAbiItem(
+  'event SignalUpdated(bytes32 indexed signalHash, int8 direction, uint16 sizeBps, uint256 stopPrice, string reasoningSummary, bytes32 reasoningHash)',
+);
+
+async function getSignalUpdatedLogsInChunks(
+  vaultAddress: Address,
+  fromBlock: bigint,
+  toBlock: bigint,
+) {
+  const logs = [];
+  let start = fromBlock;
+
+  while (start <= toBlock) {
+    const end = start + MAX_LOG_RANGE > toBlock ? toBlock : start + MAX_LOG_RANGE;
+    const batch = await publicClient.getLogs({
+      address: vaultAddress,
+      event: SIGNAL_UPDATED,
+      fromBlock: start,
+      toBlock: end,
+    });
+    logs.push(...batch);
+    start = end + 1n;
+  }
+
+  return logs;
+}
+
+async function findSignalUpdatedLog(
+  vaultAddress: Address,
+  reasoningHash: string,
+  nearBlock?: number,
+): Promise<{ blockNumber: bigint; txHash: Hex } | null> {
+  const latest = await publicClient.getBlockNumber();
+
+  let fromBlock: bigint;
+  let toBlock: bigint;
+  if (nearBlock != null && nearBlock > 0) {
+    fromBlock = BigInt(Math.max(nearBlock - 50, 0));
+    toBlock = BigInt(nearBlock + 50) > latest ? latest : BigInt(nearBlock + 50);
+  } else {
+    fromBlock = latest > 5000n ? latest - 5000n : 0n;
+    toBlock = latest;
+  }
+
+  const logs = await getSignalUpdatedLogsInChunks(vaultAddress, fromBlock, toBlock);
+  const normalized = reasoningHash.toLowerCase();
+
+  for (const log of logs) {
+    try {
+      const decoded = decodeSignalUpdated(log);
+      if (decoded.reasoningHash.toLowerCase() === normalized) {
+        return {
+          blockNumber: log.blockNumber,
+          txHash: log.transactionHash,
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+export async function buildCustomAgentReceipt(
+  vaultAddress: Address,
+  reasoningHash: string,
+): Promise<Receipt | null> {
+  const signal = await signalForHash(vaultAddress, reasoningHash);
+  if (!signal) return null;
+
+  const vault = vaultIndexer.getVault(vaultAddress);
+  const completion = await findSignalUpdatedLog(vaultAddress, reasoningHash, signal.epoch);
+
+  let fallback: PipelineFallbackData | undefined;
+  let price = 0n;
+  let funding = 0n;
+  let fearGreed = 50n;
+  let news = '';
+
+  try {
+    const [fallbackData, oracleCents] = await Promise.all([
+      fetchPipelineFallbackData(),
+      fetchEthUsdCents(),
+    ]);
+    fallback = fallbackData;
+    price = BigInt(oracleCents);
+    funding = fallbackData.fetchedFunding;
+    fearGreed = BigInt(fallbackData.fearGreedIndex);
+    news = fallbackData.newsSummary;
+  } catch (err) {
+    logger.warn(CTX, 'Custom receipt market data fetch failed', err);
+  }
+
+  const displayReasoning = sanitizePipelineText(signal.reasoningSummary);
+
+  return {
+    hash: reasoningHash,
+    vaultAddress,
+    orchestrator: vault?.orchestrator,
+    epoch: signal.epoch,
+    blockNumber: completion ? Number(completion.blockNumber) : signal.epoch,
+    txHash: completion?.txHash,
+    reasoningSummary: displayReasoning,
+    ruleBased: displayReasoning.toLowerCase().includes('rule-based'),
+    publisherKind: 'custom',
+    signalDirection: signal.direction,
+    signalSizeBps: signal.sizeBps,
+    stages: buildStages(price, funding, fearGreed, news, fallback),
+  };
 }
 
 export async function buildReceiptFromRun(
@@ -406,6 +523,16 @@ export async function getOrBuildReceipt(
     : vaultIndexer.getAllVaults();
 
   for (const vault of candidates) {
+    if (isCustomAgentVault(vault)) {
+      const customReceipt = await buildCustomAgentReceipt(vault.address, lookupHash);
+      if (customReceipt) {
+        receiptStore.store(customReceipt);
+        logger.info(CTX, `Built custom-agent receipt ${lookupHash} for vault ${vault.address}`);
+        return customReceipt;
+      }
+      continue;
+    }
+
     let runId = await findRunIdForReasoningHash(vault.orchestrator, lookupHash);
 
     if (runId === null) {
@@ -456,6 +583,15 @@ export async function backfillReceiptsForVault(vaultAddress: Address): Promise<n
   for (const signal of history) {
     if (!signal.reasoningHash || signal.reasoningHash === `0x${'0'.repeat(64)}`) continue;
     if (receiptStore.get(signal.reasoningHash)) continue;
+
+    if (isCustomAgentVault(vault)) {
+      const receipt = await buildCustomAgentReceipt(vaultAddress, signal.reasoningHash);
+      if (receipt) {
+        receiptStore.store(receipt);
+        stored++;
+      }
+      continue;
+    }
 
     const receipt = await getOrBuildReceipt(signal.reasoningHash, vaultAddress);
     if (receipt) stored++;

@@ -27,6 +27,9 @@ export interface Receipt {
   txHash?: string;
   reasoningSummary?: string;
   ruleBased?: boolean;
+  publisherKind?: 'native' | 'custom';
+  signalDirection?: number;
+  signalSizeBps?: number;
 }
 
 class ReceiptStore {

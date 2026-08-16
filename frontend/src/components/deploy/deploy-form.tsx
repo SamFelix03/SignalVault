@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, type ComponentType, type ReactNode } from 'react'
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi'
 import { parseEther, type Hex } from 'viem'
-import { Bot, Gauge, Percent, Wallet } from 'lucide-react'
+import { Bot, Gauge, Percent, Wallet, Plug, Sparkles } from 'lucide-react'
 import { vaultFactoryConfig } from '@/lib/contracts'
 import { TxStatus } from '@/components/common/tx-status'
 import { PromptPreview } from './prompt-preview'
@@ -20,8 +20,10 @@ import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
 
 type DeployPhase = 'form' | 'deploying' | 'resolving' | 'setup' | 'done'
+type AgentType = 'native' | 'custom'
 
 function FormSection({
   step,
@@ -55,10 +57,61 @@ function FormSection({
   )
 }
 
+function AgentTypeChoice({
+  value,
+  onChange,
+}: {
+  value: AgentType
+  onChange: (v: AgentType) => void
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <button
+        type="button"
+        onClick={() => onChange('native')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          value === 'native'
+            ? 'border-accent bg-accent/10'
+            : 'border-border/60 bg-secondary/20 hover:border-muted-foreground/30',
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-accent" />
+          <span className="text-sm font-semibold">Use SignalVault agent</span>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          On-chain AI reads your prompt every epoch and publishes signals automatically.
+        </p>
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('custom')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          value === 'custom'
+            ? 'border-accent bg-accent/10'
+            : 'border-border/60 bg-secondary/20 hover:border-muted-foreground/30',
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <Plug className="h-4 w-4 text-accent" />
+          <span className="text-sm font-semibold">Connect my own agent</span>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Deploy a vault and publish signals from your bot via signalvault-sdk.
+        </p>
+      </button>
+    </div>
+  )
+}
+
 export function DeployForm() {
   const { address } = useAccount()
+  const [agentType, setAgentType] = useState<AgentType>('native')
   const [vaultName, setVaultName] = useState('')
   const [strategyPrompt, setStrategyPrompt] = useState('')
+  const [description, setDescription] = useState('')
   const [feeBps, setFeeBps] = useState(500)
   const [maxDrawdownBps, setMaxDrawdownBps] = useState(2000)
   const [deposit, setDeposit] = useState('1')
@@ -68,26 +121,44 @@ export function DeployForm() {
   const [resolveError, setResolveError] = useState<string | null>(null)
   const setupStarted = useRef(false)
 
+  const isCustom = agentType === 'custom'
+
   const { writeContract, data: txHash, isPending, error: writeError, reset } = useWriteContract()
   const { isLoading: isConfirming, isSuccess: deploySuccess } = useWaitForTransactionReceipt({
     hash: txHash,
   })
 
   const fullStrategyPrompt = vaultName
-    ? `${vaultName}: ${strategyPrompt}`
-    : strategyPrompt
+    ? isCustom
+      ? `${vaultName}: ${description}`
+      : `${vaultName}: ${strategyPrompt}`
+    : isCustom
+      ? description
+      : strategyPrompt
 
   function handleDeploy() {
-    if (!strategyPrompt || !vaultName) return
+    if (!vaultName) return
+    if (isCustom && !description) return
+    if (!isCustom && !strategyPrompt) return
+
     setPhase('deploying')
     setResolveError(null)
     setupStarted.current = false
-    writeContract({
-      ...vaultFactoryConfig,
-      functionName: 'deployVault',
-      args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps)],
-      value: parseEther(deposit),
-    })
+
+    if (isCustom) {
+      writeContract({
+        ...vaultFactoryConfig,
+        functionName: 'deployCustomAgentVault',
+        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps)],
+      })
+    } else {
+      writeContract({
+        ...vaultFactoryConfig,
+        functionName: 'deployVault',
+        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps)],
+        value: parseEther(deposit),
+      })
+    }
   }
 
   useEffect(() => {
@@ -120,7 +191,23 @@ export function DeployForm() {
           ? 'error'
           : 'idle'
 
-  const progress = vaultName ? (strategyPrompt ? (feeBps > 0 ? (deposit ? 100 : 75) : 50) : 25) : 0
+  const progress = isCustom
+    ? vaultName
+      ? description
+        ? feeBps > 0
+          ? 100
+          : 75
+        : 50
+      : 0
+    : vaultName
+      ? strategyPrompt
+        ? feeBps > 0
+          ? deposit
+            ? 100
+            : 75
+          : 50
+        : 25
+      : 0
 
   function handleCloseTxStatus() {
     reset()
@@ -168,6 +255,7 @@ export function DeployForm() {
           deployment={deployment}
           deployTxHash={txHash as Hex}
           vaultName={vaultName}
+          isCustomAgent={isCustom}
         />
       </div>
     )
@@ -195,14 +283,27 @@ export function DeployForm() {
             <CardHeader>
               <CardTitle className="text-base">Vault Configuration</CardTitle>
               <CardDescription>
-                Define how your agent trades — setup runs automatically after deploy
+                {isCustom
+                  ? 'Deploy a vault for your bot — setup skips the AI pipeline'
+                  : 'Define how your agent trades — setup runs automatically after deploy'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-8">
               <FormSection
                 step={1}
+                title="Agent Type"
+                description="Native on-chain AI or bring your own bot via the SDK"
+                icon={isCustom ? Plug : Sparkles}
+              >
+                <AgentTypeChoice value={agentType} onChange={setAgentType} />
+              </FormSection>
+
+              <Separator />
+
+              <FormSection
+                step={2}
                 title="Vault Name"
-                description="Prepended to your strategy prompt on-chain"
+                description="Shown on the leaderboard and prepended to your on-chain description"
                 icon={Bot}
               >
                 <Input
@@ -216,26 +317,43 @@ export function DeployForm() {
 
               <Separator />
 
-              <FormSection
-                step={2}
-                title="Strategy Prompt"
-                description="The agent reads this every epoch to decide trades"
-                icon={Bot}
-              >
-                <Textarea
-                  id="strategy"
-                  value={strategyPrompt}
-                  onChange={e => setStrategyPrompt(e.target.value)}
-                  rows={5}
-                  placeholder="e.g. Momentum breakout on ETH/USDso. Max 20% drawdown. Exit if funding rate exceeds 0.1%. Reduce size when Fear & Greed below 30..."
-                  className="resize-none border-border/80 bg-secondary/30 focus:bg-background"
-                />
-              </FormSection>
+              {isCustom ? (
+                <FormSection
+                  step={3}
+                  title="One-line Description"
+                  description="Brief strategy summary for followers — your bot logic stays off-chain"
+                  icon={Bot}
+                >
+                  <Input
+                    id="description"
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    placeholder="e.g. RSI momentum on ETH/USD — rebalances hourly"
+                    className="border-border/80 bg-secondary/30 focus:bg-background"
+                  />
+                </FormSection>
+              ) : (
+                <FormSection
+                  step={3}
+                  title="Strategy Prompt"
+                  description="The agent reads this every epoch to decide trades"
+                  icon={Bot}
+                >
+                  <Textarea
+                    id="strategy"
+                    value={strategyPrompt}
+                    onChange={e => setStrategyPrompt(e.target.value)}
+                    rows={5}
+                    placeholder="e.g. Momentum breakout on ETH/USDso. Max 20% drawdown. Exit if funding rate exceeds 0.1%. Reduce size when Fear & Greed below 30..."
+                    className="resize-none border-border/80 bg-secondary/30 focus:bg-background"
+                  />
+                </FormSection>
+              )}
 
               <Separator />
 
               <FormSection
-                step={3}
+                step={4}
                 title="Risk Parameters"
                 description="Performance fee and drawdown guard thresholds"
                 icon={Percent}
@@ -267,44 +385,74 @@ export function DeployForm() {
                 </div>
               </FormSection>
 
-              <Separator />
-
-              <FormSection
-                step={4}
-                title="Agent Funding"
-                description="STT deposit — split between orchestrator and epoch cron"
-                icon={Gauge}
-              >
-                <Input
-                  id="deposit"
-                  type="number"
-                  value={deposit}
-                  onChange={e => setDeposit(e.target.value)}
-                  step="0.1"
-                  min="0"
-                  className="max-w-xs font-mono"
-                />
-              </FormSection>
+              {!isCustom && (
+                <>
+                  <Separator />
+                  <FormSection
+                    step={5}
+                    title="Agent Funding"
+                    description="STT deposit — split between orchestrator and epoch cron"
+                    icon={Gauge}
+                  >
+                    <Input
+                      id="deposit"
+                      type="number"
+                      value={deposit}
+                      onChange={e => setDeposit(e.target.value)}
+                      step="0.1"
+                      min="0"
+                      className="max-w-xs font-mono"
+                    />
+                  </FormSection>
+                </>
+              )}
 
               <Button
                 onClick={handleDeploy}
-                disabled={!vaultName || !strategyPrompt || isPending || isConfirming || phase === 'deploying'}
+                disabled={
+                  !vaultName ||
+                  (isCustom ? !description : !strategyPrompt) ||
+                  isPending ||
+                  isConfirming ||
+                  phase === 'deploying'
+                }
                 size="lg"
                 className="w-full bg-accent text-accent-foreground hover:bg-accent/90 shadow-lg shadow-accent/10"
               >
-                {isPending ? 'Confirm in Wallet...' : isConfirming ? 'Deploying 8 Contracts...' : 'Deploy Vault'}
+                {isPending
+                  ? 'Confirm in Wallet...'
+                  : isConfirming
+                    ? 'Deploying 8 Contracts...'
+                    : isCustom
+                      ? 'Deploy Custom Agent Vault'
+                      : 'Deploy Vault'}
               </Button>
 
               <p className="text-center text-[11px] text-muted-foreground">
-                After deploy you&apos;ll confirm ~6 more transactions in MetaMask — subscriptions,
-                epoch cron funding, and first pipeline run.
+                {isCustom
+                  ? 'After deploy you\'ll confirm ~4 subscription transactions, then copy the SDK snippet to connect your bot.'
+                  : 'After deploy you\'ll confirm ~6 more transactions in MetaMask — subscriptions, epoch cron funding, and first pipeline run.'}
               </p>
             </CardContent>
           </Card>
         </div>
 
         <div className="space-y-4 xl:col-span-2 xl:sticky xl:top-24 xl:self-start">
-          <PromptPreview name={vaultName} description={strategyPrompt} />
+          {isCustom ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Custom agent vault</CardTitle>
+                <CardDescription>
+                  After deploy, your <strong>vault address</strong> appears at the top of the setup screen — copy it into{' '}
+                  <code className="font-mono text-xs">examples/rsi-agent/.env</code>. Install{' '}
+                  <code className="font-mono text-xs">signalvault-sdk</code> and call{' '}
+                  <code className="font-mono text-xs">vault.publish()</code> from your bot.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          ) : (
+            <PromptPreview name={vaultName} description={strategyPrompt} />
+          )}
         </div>
 
         <TxStatus

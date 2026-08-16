@@ -1,0 +1,66 @@
+export const ExternalSignalPublisherABI = [
+  {
+    type: 'function',
+    name: 'isCustomPublisher',
+    inputs: [],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    name: 'publish',
+    inputs: [
+      { name: 'direction', type: 'int8' },
+      { name: 'sizeBps', type: 'uint16' },
+      { name: 'stopPrice', type: 'uint256' },
+      { name: 'reason', type: 'string' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'publishers',
+    inputs: [{ name: '', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'addPublisher',
+    inputs: [{ name: 'publisher', type: 'address' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'removePublisher',
+    inputs: [{ name: 'publisher', type: 'address' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'vault',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'owner',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    name: 'SignalPublished',
+    inputs: [
+      { name: 'direction', type: 'int8', indexed: false },
+      { name: 'sizeBps', type: 'uint16', indexed: false },
+      { name: 'stopPrice', type: 'uint256', indexed: false },
+      { name: 'reasoningHash', type: 'bytes32', indexed: false },
+    ],
+  },
+] as const;

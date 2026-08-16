@@ -14,6 +14,11 @@ interface IInitOrchestrator {
     function initialize(address, address, address, string calldata) external;
 }
 
+interface IInitPublisher {
+    function initialize(address vault, address owner) external;
+    function addPublisher(address publisher) external;
+}
+
 interface IInitMirror {
     function initialize(address, address, address) external;
     function setPerformanceLedger(address) external;
@@ -56,6 +61,7 @@ contract VaultFactory {
     address public implEpochCron;
     address public implPerformanceLedger;
     address public implFeeDistributor;
+    address public implPublisher;
 
     // Somnia platform constants
     address public constant AGENT_PLATFORM = 0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776;
@@ -96,7 +102,7 @@ contract VaultFactory {
 
     event ImplementationsSet(
         address vault, address orchestrator, address mirror, address stop,
-        address guard, address cron, address ledger, address fees
+        address guard, address cron, address ledger, address fees, address publisher
     );
 
     modifier onlyOwner() {
@@ -112,7 +118,8 @@ contract VaultFactory {
         address _implDrawdownGuard,
         address _implEpochCron,
         address _implPerformanceLedger,
-        address _implFeeDistributor
+        address _implFeeDistributor,
+        address _implPublisher
     ) {
         owner = msg.sender;
         implVault = _implVault;
@@ -123,10 +130,12 @@ contract VaultFactory {
         implEpochCron = _implEpochCron;
         implPerformanceLedger = _implPerformanceLedger;
         implFeeDistributor = _implFeeDistributor;
+        implPublisher = _implPublisher;
 
         emit ImplementationsSet(
             _implVault, _implOrchestrator, _implMirrorReactor, _implStopReactor,
-            _implDrawdownGuard, _implEpochCron, _implPerformanceLedger, _implFeeDistributor
+            _implDrawdownGuard, _implEpochCron, _implPerformanceLedger, _implFeeDistributor,
+            _implPublisher
         );
     }
 
@@ -178,6 +187,52 @@ contract VaultFactory {
         }
 
         // Register
+        vaultId = deployments.length;
+        deployments.push(dep);
+        vaultIndex[dep.vault] = vaultId;
+        strategistVaults[dep.strategist].push(dep.vault);
+
+        emit VaultDeployed(
+            vaultId, dep.vault, dep.strategist, dep.orchestrator,
+            dep.mirrorReactor, dep.stopReactor, dep.drawdownGuard, dep.epochCron
+        );
+    }
+
+    /// @notice Deploy a vault whose signals come from an external agent / SDK.
+    ///         The caller is registered as the first publisher. No agent pipeline funding.
+    function deployCustomAgentVault(
+        string calldata description,
+        uint16 performanceFeeBps,
+        uint256 maxDrawdownBps
+    ) external returns (uint256 vaultId) {
+        require(implPublisher != address(0), "publisher impl unset");
+
+        VaultDeployment memory dep;
+        dep.strategist = msg.sender;
+        dep.deployedAt = block.timestamp;
+
+        dep.orchestrator = implPublisher.clone();
+        dep.vault = implVault.clone();
+
+        IInitPublisher(dep.orchestrator).initialize(dep.vault, address(this));
+        IInitVault(dep.vault).initialize(
+            address(this), dep.strategist, description, performanceFeeBps, dep.orchestrator
+        );
+
+        _deploySupport(dep, performanceFeeBps, maxDrawdownBps);
+
+        IInitVault(dep.vault).setReactors(dep.mirrorReactor, dep.stopReactor, dep.drawdownGuard);
+        IInitVault(dep.vault).setPerformanceLedger(dep.performanceLedger);
+        IInitMirror(dep.mirrorReactor).setPerformanceLedger(dep.performanceLedger);
+        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.orchestrator);
+        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.mirrorReactor);
+
+        IInitPublisher(dep.orchestrator).addPublisher(dep.strategist);
+
+        ITransferOwnership(dep.vault).transferOwnership(dep.strategist);
+        ITransferOwnership(dep.orchestrator).transferOwnership(dep.strategist);
+        ITransferOwnership(dep.performanceLedger).transferOwnership(dep.strategist);
+
         vaultId = deployments.length;
         deployments.push(dep);
         vaultIndex[dep.vault] = vaultId;

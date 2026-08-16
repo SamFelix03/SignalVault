@@ -15,6 +15,19 @@ export function formatPrice(price: number | bigint, decimals = 2): string {
   return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
+/** On-chain oracle / stop prices stored as USD cents (2 decimals). */
+export function formatUsdCents(cents: number | bigint | string, decimals = 2): string {
+  const raw = typeof cents === 'bigint' ? Number(cents) : typeof cents === 'string' ? Number(cents) : cents
+  if (!Number.isFinite(raw) || raw <= 0) return '—'
+  const usd = raw / 100
+  return usd.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+}
+
+/** Alias for vault signal stop-loss display. */
+export function formatStopPrice(cents: number | bigint | string, decimals = 2): string {
+  return formatUsdCents(cents, decimals)
+}
+
 /** dreamDEX pool price / notional in raw on-chain units → USD display */
 export function formatPoolPrice(raw: number | bigint | string): string {
   const n = typeof raw === 'bigint' ? Number(raw) : typeof raw === 'string' ? Number(raw) : raw

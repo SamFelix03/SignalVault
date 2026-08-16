@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { FileSearch } from 'lucide-react'
-import { formatPrice, timeAgo } from '@/lib/utils'
+import { formatStopPrice, timeAgo } from '@/lib/utils'
 import { SignalIndicator } from '@/components/leaderboard/signal-indicator'
 import type { Signal } from '@/types/vault'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -59,7 +59,7 @@ export function SignalHistory({ signals, vaultAddress }: SignalHistoryProps) {
                   {(sig.sizeBps / 100).toFixed(1)}%
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm">
-                  ${formatPrice(sig.stopPrice)}
+                  ${formatStopPrice(sig.stopPrice)}
                 </TableCell>
                 <TableCell className="text-right text-sm text-muted-foreground">
                   {sig.timestamp ? timeAgo(sig.timestamp) : '—'}

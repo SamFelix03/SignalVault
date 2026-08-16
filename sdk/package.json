@@ -1,0 +1,38 @@
+{
+  "name": "signalvault-sdk",
+  "version": "0.1.0",
+  "description": "Publish trading signals to SignalVault custom agent vaults on Somnia",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "signalvault",
+    "somnia",
+    "defi",
+    "trading-signals"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "viem": "~2.37.8"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

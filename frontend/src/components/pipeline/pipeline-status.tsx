@@ -5,7 +5,7 @@ import { type Address } from 'viem'
 import { API_URL } from '@/lib/contracts'
 import { isMockMode } from '@/lib/mock-mode'
 import { mockPipelineDetail } from '@/lib/mock-data'
-import { cn, formatFundingChange, formatPrice, timeAgo } from '@/lib/utils'
+import { cn, formatFundingChange, formatUsdCents, timeAgo } from '@/lib/utils'
 import { Circle, CheckCircle2, Loader2, Play, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -87,7 +87,7 @@ function MockPipelineStatusView() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <DataCard label="Price" value={`$${formatPrice(d.fetchedPrice)}`} />
+            <DataCard label="Price" value={`$${formatUsdCents(d.fetchedPrice)}`} />
             <DataCard label="24h Change" value={formatFundingChange(d.fetchedFunding)} />
             <DataCard label="Fear & Greed" value={d.fearGreedIndex.toString()} />
             <DataCard label="News Summary" value={d.newsSummary} isText />
@@ -255,7 +255,7 @@ function LivePipelineStatusPage({ vaultAddress }: { vaultAddress: Address; orche
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <DataCard label="Price" value={fetchedPrice > BigInt(0) ? `$${formatPrice(fetchedPrice)}` : '—'} />
+              <DataCard label="Price" value={fetchedPrice > BigInt(0) ? `$${formatUsdCents(fetchedPrice)}` : '—'} />
               <DataCard label="24h Change" value={fetchedFunding > BigInt(0) ? formatFundingChange(fetchedFunding) : '—'} />
               <DataCard label="Fear & Greed" value={fearGreedIndex > 0 ? fearGreedIndex.toString() : '—'} />
               <DataCard label="News Summary" value={newsSummary || '—'} isText />

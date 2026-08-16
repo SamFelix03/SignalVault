@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowRight, Users } from 'lucide-react'
+import { ArrowRight, Users, Plug } from 'lucide-react'
 import { cn, truncateAddress, formatPnlPercent, formatBps, timeAgo } from '@/lib/utils'
 import { SignalIndicator } from './signal-indicator'
 import type { VaultInfo } from '@/types/vault'
@@ -50,6 +50,12 @@ export function FeaturedVaultCard({ vault, rank, index = 0 }: FeaturedVaultCardP
                 <span className="font-mono text-xs text-muted-foreground">#{rank}</span>
               )}
               <SignalIndicator direction={vault.currentSignal?.direction ?? 0} size="sm" />
+              {vault.publisherKind === 'custom' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+                  <Plug className="h-3 w-3" />
+                  Custom agent
+                </span>
+              )}
               {vault.currentSignal?.timestamp ? (
                 <span className="text-xs text-muted-foreground">
                   Updated {timeAgo(vault.currentSignal.timestamp)}

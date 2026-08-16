@@ -1,7 +1,8 @@
-import { type Address, type Log, getAddress, keccak256, toBytes } from 'viem';
+import { type Address, getAddress } from 'viem';
 import { publicClient, config } from '../config/chains';
 import { VaultFactoryABI } from '../abis/VaultFactory';
 import { StrategyVaultABI } from '../abis/StrategyVault';
+import { ExternalSignalPublisherABI } from '../abis/ExternalSignalPublisher';
 import { logger } from '../utils/logger';
 import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import { eventBus } from './event-bus';
@@ -9,6 +10,8 @@ import { computeOnChainSignalHash, mirrorWorker } from './mirror-worker';
 import { followerVaultIndex } from './follower-vault-index';
 
 const CTX = 'VaultIndexer';
+
+export type PublisherKind = 'native' | 'custom';
 
 export interface VaultInfo {
   address: Address;
@@ -25,6 +28,8 @@ export interface VaultInfo {
   strategyPrompt: string;
   performanceFeeBps: number;
   followerCount: number;
+  publisherKind: PublisherKind;
+  factoryAddress: Address;
   currentSignal?: {
     direction: number;
     sizeBps: number;
@@ -61,13 +66,14 @@ class VaultIndexer {
   private signals: Map<Address, SignalRecord[]> = new Map();
   private trades: Map<Address, TradeRecord[]> = new Map();
   private pollInterval: ReturnType<typeof setInterval> | null = null;
-  private indexedDeploymentCount = 0;
+  private indexedDeploymentCounts = new Map<Address, number>();
 
   async start(): Promise<void> {
     logger.info(CTX, 'Starting vault indexer');
 
-    if (!config.vaultFactoryAddress) {
-      logger.warn(CTX, 'VAULT_FACTORY_ADDRESS not set, indexer will wait for configuration');
+    const factories = this.getFactoryAddresses();
+    if (factories.length === 0) {
+      logger.warn(CTX, 'No VAULT_FACTORY_ADDRESS configured');
       return;
     }
 
@@ -83,33 +89,62 @@ class VaultIndexer {
     logger.info(CTX, 'Vault indexer stopped');
   }
 
-  private async loadExistingVaults(): Promise<void> {
-    if (!config.vaultFactoryAddress) return;
-
-    try {
-      const count = await publicClient.readContract({
-        address: config.vaultFactoryAddress,
-        abi: VaultFactoryABI,
-        functionName: 'getDeploymentCount',
-      }) as bigint;
-
-      for (let i = 0; i < Number(count); i++) {
-        await this.indexVaultById(i);
+  private getFactoryAddresses(): Address[] {
+    const addrs: Address[] = [];
+    if (config.vaultFactoryAddress) addrs.push(config.vaultFactoryAddress);
+    if (
+      config.legacyVaultFactoryAddress &&
+      config.legacyVaultFactoryAddress.toLowerCase() !== config.vaultFactoryAddress?.toLowerCase()
+    ) {
+      addrs.push(config.legacyVaultFactoryAddress);
+    }
+    for (const extra of config.extraVaultFactoryAddresses ?? []) {
+      const lower = extra.toLowerCase();
+      if (!addrs.some((a) => a.toLowerCase() === lower)) {
+        addrs.push(extra);
       }
+    }
+    return addrs;
+  }
 
-      this.indexedDeploymentCount = Number(count);
-      logger.info(CTX, `Indexed ${count} existing vaults`);
-    } catch (err) {
-      logger.error(CTX, 'Failed to load existing vaults', err);
+  private async detectPublisherKind(orchestrator: Address): Promise<PublisherKind> {
+    try {
+      const isCustom = await publicClient.readContract({
+        address: orchestrator,
+        abi: ExternalSignalPublisherABI,
+        functionName: 'isCustomPublisher',
+      }) as boolean;
+      return isCustom ? 'custom' : 'native';
+    } catch {
+      return 'native';
     }
   }
 
-  private async indexVaultById(vaultId: number): Promise<void> {
-    if (!config.vaultFactoryAddress) return;
+  private async loadExistingVaults(): Promise<void> {
+    for (const factory of this.getFactoryAddresses()) {
+      try {
+        const count = await publicClient.readContract({
+          address: factory,
+          abi: VaultFactoryABI,
+          functionName: 'getDeploymentCount',
+        }) as bigint;
 
+        for (let i = 0; i < Number(count); i++) {
+          await this.indexVaultById(factory, i);
+        }
+
+        this.indexedDeploymentCounts.set(factory, Number(count));
+        logger.info(CTX, `Indexed ${count} vault(s) from factory ${factory}`);
+      } catch (err) {
+        logger.error(CTX, `Failed to load vaults from factory ${factory}`, err);
+      }
+    }
+  }
+
+  private async indexVaultById(factoryAddress: Address, vaultId: number): Promise<void> {
     try {
       const dep = await publicClient.readContract({
-        address: config.vaultFactoryAddress,
+        address: factoryAddress,
         abi: VaultFactoryABI,
         functionName: 'getDeployment',
         args: [BigInt(vaultId)],
@@ -122,10 +157,11 @@ class VaultIndexer {
 
       const vaultAddr = dep.vault;
 
-      const [strategist, strategyPrompt, performanceFeeBps] = await Promise.all([
+      const [strategist, strategyPrompt, performanceFeeBps, publisherKind] = await Promise.all([
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'strategist' }),
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'strategyPrompt' }),
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'performanceFeeBps' }),
+        this.detectPublisherKind(dep.orchestrator),
       ]);
 
       let followerCount = 0;
@@ -149,6 +185,8 @@ class VaultIndexer {
         strategyPrompt: strategyPrompt as string,
         performanceFeeBps: Number(performanceFeeBps),
         followerCount,
+        publisherKind,
+        factoryAddress,
       };
 
       try {
@@ -176,32 +214,33 @@ class VaultIndexer {
         logger.warn(CTX, `Follower index sync failed for ${vaultAddr}`, err);
       });
 
-      logger.info(CTX, `Indexed vault #${vaultId}: ${vaultAddr}`);
+      logger.info(CTX, `Indexed vault #${vaultId} (${publisherKind}): ${vaultAddr}`);
     } catch (err) {
-      logger.error(CTX, `Failed to index vault #${vaultId}`, err);
+      logger.error(CTX, `Failed to index vault #${vaultId} on ${factoryAddress}`, err);
     }
   }
 
   private async syncNewDeployments(): Promise<void> {
-    if (!config.vaultFactoryAddress) return;
+    for (const factory of this.getFactoryAddresses()) {
+      try {
+        const count = await publicClient.readContract({
+          address: factory,
+          abi: VaultFactoryABI,
+          functionName: 'getDeploymentCount',
+        }) as bigint;
 
-    try {
-      const count = await publicClient.readContract({
-        address: config.vaultFactoryAddress,
-        abi: VaultFactoryABI,
-        functionName: 'getDeploymentCount',
-      }) as bigint;
-
-      const total = Number(count);
-      for (let i = this.indexedDeploymentCount; i < total; i++) {
-        await this.indexVaultById(i);
+        const total = Number(count);
+        const prev = this.indexedDeploymentCounts.get(factory) ?? 0;
+        for (let i = prev; i < total; i++) {
+          await this.indexVaultById(factory, i);
+        }
+        if (total > prev) {
+          logger.info(CTX, `Discovered ${total - prev} new vault(s) on ${factory}`);
+          this.indexedDeploymentCounts.set(factory, total);
+        }
+      } catch (err) {
+        logger.error(CTX, `Failed to sync new deployments on ${factory}`, err);
       }
-      if (total > this.indexedDeploymentCount) {
-        logger.info(CTX, `Discovered ${total - this.indexedDeploymentCount} new vault(s)`);
-        this.indexedDeploymentCount = total;
-      }
-    } catch (err) {
-      logger.error(CTX, 'Failed to sync new deployments', err);
     }
   }
 
@@ -308,31 +347,43 @@ class VaultIndexer {
 
   /** Immediately index a vault by address (e.g. right after deploy). */
   async forceIndexVault(vaultAddress: Address): Promise<VaultInfo | undefined> {
-    if (!config.vaultFactoryAddress) return undefined;
-
     const addr = getAddress(vaultAddress);
     const existing = this.vaults.get(addr);
     if (existing) return existing;
 
-    try {
-      const vaultId = await publicClient.readContract({
-        address: config.vaultFactoryAddress,
-        abi: VaultFactoryABI,
-        functionName: 'vaultIndex',
-        args: [addr],
-      }) as bigint;
+    for (const factory of this.getFactoryAddresses()) {
+      try {
+        const vaultId = await publicClient.readContract({
+          address: factory,
+          abi: VaultFactoryABI,
+          functionName: 'vaultIndex',
+          args: [addr],
+        }) as bigint;
 
-      await this.indexVaultById(Number(vaultId));
-      this.indexedDeploymentCount = Math.max(
-        this.indexedDeploymentCount,
-        Number(vaultId) + 1,
-      );
-      return this.vaults.get(addr);
-    } catch (err) {
-      logger.error(CTX, `forceIndexVault failed for ${addr}`, err);
-      return undefined;
+        await this.indexVaultById(factory, Number(vaultId));
+        const count = await publicClient.readContract({
+          address: factory,
+          abi: VaultFactoryABI,
+          functionName: 'getDeploymentCount',
+        }) as bigint;
+        this.indexedDeploymentCounts.set(factory, Math.max(
+          this.indexedDeploymentCounts.get(factory) ?? 0,
+          Number(count),
+        ));
+        return this.vaults.get(addr);
+      } catch {
+        // try next factory
+      }
     }
+
+    logger.error(CTX, `forceIndexVault failed for ${addr}`);
+    return undefined;
   }
 }
 
 export const vaultIndexer = new VaultIndexer();
+
+/** Custom vaults use ExternalSignalPublisher — no AgentOrchestrator pipeline. */
+export function isCustomAgentVault(vault: VaultInfo | null | undefined): boolean {
+  return vault?.publisherKind === 'custom';
+}

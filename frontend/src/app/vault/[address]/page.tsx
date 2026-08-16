@@ -2,16 +2,16 @@
 
 import { use, useState, useEffect } from 'react'
 import { type Address } from 'viem'
-import { useReadContract } from 'wagmi'
+import { useReadContract, useAccount } from 'wagmi'
 import Link from 'next/link'
+import { Plug } from 'lucide-react'
 import { useVaultSignal } from '@/hooks/use-vault-signal'
 import { useVaultPnl } from '@/hooks/use-vault-pnl'
 import { useSignalHistory } from '@/hooks/use-signal-history'
 import { useAgentPipeline } from '@/hooks/use-agent-pipeline'
 import { useFollowerPosition } from '@/hooks/use-follower-positions'
 import { vaultConfig, API_URL } from '@/lib/contracts'
-import { VaultFactoryABI } from '@/abis/VaultFactory'
-import { VAULT_FACTORY_ADDRESS } from '@/lib/constants'
+import { ExternalSignalPublisherABI } from '@/abis/ExternalSignalPublisher'
 import { isMockMode } from '@/lib/mock-mode'
 import { getMockVault, getMockVaultMeta, getMockStats } from '@/lib/mock-data'
 import { SignalDisplay } from '@/components/vault/signal-display'
@@ -22,6 +22,7 @@ import { VaultStatsPanel } from '@/components/vault/vault-stats'
 import { PipelineStatus } from '@/components/vault/pipeline-status'
 import { PipelineStatusPage } from '@/components/pipeline/pipeline-status'
 import { Leaderboard } from '@/components/vault/leaderboard'
+import { ConnectAgentPanel } from '@/components/deploy/connect-agent-panel'
 import { AddressBadge } from '@/components/common/address-badge'
 import { LoadingSpinner } from '@/components/common/loading-spinner'
 import { usePageHeader } from '@/components/layout/page-header-context'
@@ -35,12 +36,13 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
-import type { VaultStats } from '@/types/vault'
+import type { PublisherKind, VaultStats } from '@/types/vault'
 import { parseVaultStrategyPrompt } from '@/lib/vault-strategy'
 
 export default function VaultDetailPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = use(params)
   const vaultAddress = address as Address
+  const { address: connectedAddress } = useAccount()
   const { setTitle } = usePageHeader()
   const mockMeta = isMockMode() ? getMockVaultMeta(address) : undefined
   const mockVault = isMockMode() ? getMockVault(address) : undefined
@@ -51,6 +53,9 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
   const displaySignal = signal ?? signals[0]
   const { stage, isRunning } = useAgentPipeline(address)
   const { position } = useFollowerPosition(vaultAddress)
+
+  const [publisherKind, setPublisherKind] = useState<PublisherKind>('native')
+  const [showConnectPanel, setShowConnectPanel] = useState(false)
 
   const { data: strategyPrompt } = useReadContract({
     ...vaultConfig(vaultAddress),
@@ -83,6 +88,13 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
     ...vaultConfig(vaultAddress),
     functionName: 'orchestrator',
     query: { enabled: !isMockMode() },
+  })
+
+  const { data: isCustomOnChain } = useReadContract({
+    address: orchestratorAddr as Address,
+    abi: ExternalSignalPublisherABI,
+    functionName: 'isCustomPublisher',
+    query: { enabled: !isMockMode() && !!orchestratorAddr },
   })
 
   const { data: followerCountData } = useReadContract({
@@ -136,12 +148,26 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
         if (vault?.followerCount != null) {
           setStats(prev => ({ ...prev, followerCount: Number(vault.followerCount) }))
         }
+        if (vault?.publisherKind) {
+          setPublisherKind(vault.publisherKind as PublisherKind)
+        }
       })
       .catch(() => {})
   }, [address, followerCountData])
 
+  useEffect(() => {
+    if (isCustomOnChain === true) {
+      setPublisherKind('custom')
+    }
+  }, [isCustomOnChain])
+
+  const isCustomVault = publisherKind === 'custom' || isCustomOnChain === true
   const resolvedStrategist = isMockMode() ? mockMeta?.strategist : strategist
   const resolvedOrchestrator = isMockMode() ? mockMeta?.orchestrator : orchestratorAddr
+  const isOwner =
+    connectedAddress &&
+    resolvedStrategist &&
+    connectedAddress.toLowerCase() === (resolvedStrategist as string).toLowerCase()
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -160,7 +186,15 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
       </Breadcrumb>
 
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{vaultName}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">{vaultName}</h1>
+          {isCustomVault && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent">
+              <Plug className="h-3.5 w-3.5" />
+              Custom agent
+            </span>
+          )}
+        </div>
         {strategyText ? (
           <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">{strategyText}</p>
         ) : null}
@@ -173,12 +207,28 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
             by <AddressBadge address={resolvedStrategist as string} />
           </span>
         )}
+        {isCustomVault && isOwner && resolvedOrchestrator && (
+          <button
+            type="button"
+            onClick={() => setShowConnectPanel(v => !v)}
+            className="text-xs text-accent hover:text-accent/80"
+          >
+            {showConnectPanel ? 'Hide SDK panel' : 'Connect your agent'}
+          </button>
+        )}
       </div>
+
+      {isCustomVault && isOwner && showConnectPanel && resolvedOrchestrator && (
+        <ConnectAgentPanel
+          vaultAddress={vaultAddress}
+          publisherAddress={resolvedOrchestrator as Address}
+        />
+      )}
 
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
+          {!isCustomVault && <TabsTrigger value="pipeline">Pipeline</TabsTrigger>}
           <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
         </TabsList>
 
@@ -202,7 +252,7 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
             </div>
 
             <div className="space-y-6">
-              <PipelineStatus currentStage={stage} isRunning={isRunning} />
+              {!isCustomVault && <PipelineStatus currentStage={stage} isRunning={isRunning} />}
               <VaultStatsPanel stats={stats} />
               <SubscribeForm
                 vaultAddress={vaultAddress}
@@ -212,20 +262,22 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
           </div>
         </TabsContent>
 
-        <TabsContent value="pipeline" className="mt-6">
-          {resolvedOrchestrator ? (
-            <PipelineStatusPage
-              vaultAddress={vaultAddress}
-              orchestratorAddress={resolvedOrchestrator as Address}
-            />
-          ) : (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <p className="text-muted-foreground">Loading orchestrator address...</p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+        {!isCustomVault && (
+          <TabsContent value="pipeline" className="mt-6">
+            {resolvedOrchestrator ? (
+              <PipelineStatusPage
+                vaultAddress={vaultAddress}
+                orchestratorAddress={resolvedOrchestrator as Address}
+              />
+            ) : (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <p className="text-muted-foreground">Loading orchestrator address...</p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        )}
 
         <TabsContent value="leaderboard" className="mt-6">
           {performanceLedgerAddr ? (

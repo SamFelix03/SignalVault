@@ -159,6 +159,10 @@ IMPL_FEE_DISTRIBUTOR=$(resolve_impl \
   IMPL_FEE_DISTRIBUTOR SKIP_FEE_DISTRIBUTOR \
   FeeDistributor "src/finance/FeeDistributor.sol:FeeDistributor")
 
+IMPL_PUBLISHER=$(resolve_impl \
+  IMPL_PUBLISHER SKIP_PUBLISHER \
+  ExternalSignalPublisher "src/core/ExternalSignalPublisher.sol:ExternalSignalPublisher")
+
 echo "" >&2
 echo "=== Deploying VaultFactory ===" >&2
 
@@ -179,7 +183,7 @@ else
     --constructor-args \
       "$IMPL_STRATEGY_VAULT" "$IMPL_AGENT_ORCHESTRATOR" "$IMPL_MIRROR_REACTOR" \
       "$IMPL_STOP_REACTOR" "$IMPL_DRAWDOWN_GUARD" "$IMPL_EPOCH_CRON" \
-      "$IMPL_PERFORMANCE_LEDGER" "$IMPL_FEE_DISTRIBUTOR" 2>&1) || {
+      "$IMPL_PERFORMANCE_LEDGER" "$IMPL_FEE_DISTRIBUTOR" "$IMPL_PUBLISHER" 2>&1) || {
     echo "$FACTORY_OUT" >&2
     exit 1
   }
@@ -218,7 +222,8 @@ cat > "$OUT_FILE" <<EOF
     "drawdownGuard": "$IMPL_DRAWDOWN_GUARD",
     "epochCron": "$IMPL_EPOCH_CRON",
     "performanceLedger": "$IMPL_PERFORMANCE_LEDGER",
-    "feeDistributor": "$IMPL_FEE_DISTRIBUTOR"
+    "feeDistributor": "$IMPL_FEE_DISTRIBUTOR",
+    "externalSignalPublisher": "$IMPL_PUBLISHER"
   }
 }
 EOF

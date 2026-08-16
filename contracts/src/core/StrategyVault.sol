@@ -3,6 +3,11 @@ pragma solidity 0.8.30;
 
 import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
 
+interface IPerformanceLedger {
+    function recordTrade(int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size) external;
+    function markToMarket() external view returns (uint256 price, uint256 updatedAt);
+}
+
 contract StrategyVault is IStrategyVault {
     address public owner;
     address public strategist;
@@ -25,6 +30,9 @@ contract StrategyVault is IStrategyVault {
     address public mirrorReactor;
     address public stopReactor;
     address public drawdownGuard;
+
+    /// @dev Oracle-scaled entry price (18 decimals) for the open strategist leg.
+    uint256 private _positionEntryPrice;
 
     modifier onlyOwner() {
         require(msg.sender == owner, "not owner");
@@ -85,6 +93,28 @@ contract StrategyVault is IStrategyVault {
         performanceLedger = _ledger;
     }
 
+    function _readMarkPriceWei() internal view returns (bool ok, uint256 mark) {
+        if (performanceLedger == address(0)) return (false, 0);
+        try IPerformanceLedger(performanceLedger).markToMarket() returns (uint256 price, uint256) {
+            return (true, price * 1e10);
+        } catch {
+            return (false, 0);
+        }
+    }
+
+    function _settlePreviousTrade(Signal memory previous) internal {
+        if (previous.direction == 0 || previous.sizeBps == 0) return;
+        if (performanceLedger == address(0)) return;
+
+        (bool ok, uint256 mark) = _readMarkPriceWei();
+        if (!ok) return;
+
+        uint256 entry = _positionEntryPrice > 0 ? _positionEntryPrice : mark;
+        uint256 size = (uint256(previous.sizeBps) * 1e18) / 10_000;
+        IPerformanceLedger(performanceLedger).recordTrade(previous.direction, entry, mark, size);
+        _positionEntryPrice = 0;
+    }
+
     function updateSignal(
         int8 direction,
         uint16 sizeBps,
@@ -94,6 +124,9 @@ contract StrategyVault is IStrategyVault {
     ) external onlyOrchestrator notEmergency {
         require(direction >= -1 && direction <= 1, "invalid direction");
         require(sizeBps <= 10000, "invalid size");
+
+        Signal memory previous = currentSignal;
+        _settlePreviousTrade(previous);
 
         Signal memory sig = Signal({
             direction: direction,
@@ -106,6 +139,11 @@ contract StrategyVault is IStrategyVault {
 
         currentSignal = sig;
         _signalHistory.push(sig);
+
+        if (direction != 0 && sizeBps != 0 && performanceLedger != address(0)) {
+            (bool ok, uint256 mark) = _readMarkPriceWei();
+            if (ok) _positionEntryPrice = mark;
+        }
 
         bytes32 signalHash = keccak256(
             abi.encodePacked(direction, sizeBps, stopPrice, block.number)
@@ -155,6 +193,8 @@ contract StrategyVault is IStrategyVault {
         );
 
         emergencyMode = true;
+        _settlePreviousTrade(currentSignal);
+
         currentSignal = Signal({
             direction: int8(0),
             sizeBps: 0,

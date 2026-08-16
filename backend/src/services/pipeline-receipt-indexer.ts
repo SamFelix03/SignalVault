@@ -1,6 +1,6 @@
 import { type Address, type Log } from 'viem';
 import { publicClient } from '../config/chains';
-import { vaultIndexer } from './vault-indexer';
+import { vaultIndexer, isCustomAgentVault } from './vault-indexer';
 import {
   backfillReceiptsForVault,
   buildReceiptFromRun,
@@ -33,9 +33,13 @@ class PipelineReceiptIndexer {
   private async backfillAll(): Promise<void> {
     const vaults = vaultIndexer.getAllVaults();
     for (const vault of vaults) {
-      const count = await backfillReceiptsForVault(vault.address);
-      if (count > 0) {
-        logger.info(CTX, `Backfilled ${count} receipt(s) for vault ${vault.address}`);
+      try {
+        const count = await backfillReceiptsForVault(vault.address);
+        if (count > 0) {
+          logger.info(CTX, `Backfilled ${count} receipt(s) for vault ${vault.address}`);
+        }
+      } catch (err) {
+        logger.warn(CTX, `Receipt backfill failed for ${vault.address}`, err);
       }
     }
   }
@@ -46,6 +50,7 @@ class PipelineReceiptIndexer {
 
     const vaults = vaultIndexer.getAllVaults();
     for (const vault of vaults) {
+      if (isCustomAgentVault(vault)) continue;
       const logs = await publicClient.getLogs({
         address: vault.orchestrator,
         fromBlock: this.lastBlock + 1n,

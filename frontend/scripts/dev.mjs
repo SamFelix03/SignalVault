@@ -25,8 +25,8 @@ const useMock = process.argv.includes('--mock')
 
 const port =
   process.env.FRONTEND_PORT ??
-  process.env.PORT ??
   readPortFromEnvFile() ??
+  process.env.PORT ??
   '3000'
 
 const childEnv = { ...process.env }

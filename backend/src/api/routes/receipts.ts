@@ -60,7 +60,9 @@ function toAgentReceipt(receipt: Receipt) {
         answerable: true,
       } : undefined,
       inferToolsChat: (newsStage || receipt.reasoningSummary) ? {
-        systemPrompt: 'Strategy agent inference',
+        systemPrompt: receipt.publisherKind === 'custom'
+          ? 'Custom agent inference'
+          : 'Strategy agent inference',
         userMessage: JSON.stringify({
           price: priceResult?.price,
           funding: fundingStage?.result,
@@ -69,8 +71,11 @@ function toAgentReceipt(receipt: Receipt) {
         }, null, 2),
         chainOfThought,
         toolCalled: 'updateSignal',
-        toolArguments: {},
-        ruleBased: false,
+        toolArguments: {
+          ...(receipt.signalDirection !== undefined && { direction: receipt.signalDirection }),
+          ...(receipt.signalSizeBps !== undefined && { sizeBps: receipt.signalSizeBps }),
+        },
+        ruleBased: receipt.ruleBased ?? false,
       } : undefined,
     },
   };

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { type Address, getAddress, parseEther } from 'viem';
 import { publicClient, getWalletClient } from '../../config/chains';
-import { vaultIndexer } from '../../services/vault-indexer';
+import { vaultIndexer, isCustomAgentVault } from '../../services/vault-indexer';
 import {
   appendPipelineLog,
   ensurePipelineWatchdog,
@@ -27,6 +27,20 @@ pipelineRouter.get('/:vaultAddress', async (req: Request, res: Response) => {
     const vault = vaultIndexer.getVault(vaultAddress);
     if (!vault) {
       res.status(404).json({ error: 'Vault not found' });
+      return;
+    }
+
+    if (isCustomAgentVault(vault)) {
+      res.json({
+        customAgent: true,
+        runId: '0',
+        stage: 0,
+        flags: 0,
+        startedAt: '0',
+        completed: true,
+        data: null,
+        logs: [],
+      });
       return;
     }
 
@@ -109,6 +123,11 @@ pipelineRouter.post('/:vaultAddress/trigger', async (req: Request, res: Response
     const vault = vaultIndexer.getVault(vaultAddress);
     if (!vault) {
       res.status(404).json({ error: 'Vault not found' });
+      return;
+    }
+
+    if (isCustomAgentVault(vault)) {
+      res.status(400).json({ error: 'Custom agent vaults have no on-chain pipeline to trigger' });
       return;
     }
 

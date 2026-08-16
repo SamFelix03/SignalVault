@@ -5,6 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {VaultFactory} from "../src/core/VaultFactory.sol";
 import {StrategyVault} from "../src/core/StrategyVault.sol";
 import {AgentOrchestrator} from "../src/core/AgentOrchestrator.sol";
+import {ExternalSignalPublisher} from "../src/core/ExternalSignalPublisher.sol";
 import {MirrorReactor} from "../src/reactivity/MirrorReactor.sol";
 import {StopReactor} from "../src/reactivity/StopReactor.sol";
 import {DrawdownGuard} from "../src/reactivity/DrawdownGuard.sol";
@@ -31,6 +32,9 @@ contract DeployAll is Script {
         address implOrch = address(new AgentOrchestrator());
         console.log("Impl AgentOrchestrator:", implOrch);
 
+        address implPublisher = address(new ExternalSignalPublisher());
+        console.log("Impl ExternalSignalPublisher:", implPublisher);
+
         address implMirror = address(new MirrorReactor());
         console.log("Impl MirrorReactor:", implMirror);
 
@@ -51,7 +55,7 @@ contract DeployAll is Script {
 
         VaultFactory factory = new VaultFactory(
             implVault, implOrch, implMirror, implStop,
-            implGuard, implCron, implLedger, implFees
+            implGuard, implCron, implLedger, implFees, implPublisher
         );
         console.log("VaultFactory:", address(factory));
 

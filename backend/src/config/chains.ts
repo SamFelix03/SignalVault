@@ -5,7 +5,7 @@ import { createPublicClient, createWalletClient, http, defineChain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts';
 import {
   CHAIN_ID, RPC_URL, WS_RPC_URL, EXPLORER_URL,
-  VAULT_FACTORY_ADDRESS, PERFORMANCE_LEDGER_ADDRESS,
+  VAULT_FACTORY_ADDRESS, LEGACY_VAULT_FACTORY_ADDRESS, EXTRA_VAULT_FACTORY_ADDRESSES, PERFORMANCE_LEDGER_ADDRESS,
   AGENT_REQUESTER_ADDRESS, ETH_USD_ORACLE,
 } from './constants';
 
@@ -28,6 +28,8 @@ export const config = {
   wsRpcUrl: WS_RPC_URL,
   chainId: CHAIN_ID,
   vaultFactoryAddress: VAULT_FACTORY_ADDRESS || undefined,
+  legacyVaultFactoryAddress: LEGACY_VAULT_FACTORY_ADDRESS || undefined,
+  extraVaultFactoryAddresses: EXTRA_VAULT_FACTORY_ADDRESSES,
   performanceLedgerAddress: PERFORMANCE_LEDGER_ADDRESS || undefined,
   agentRequesterAddress: AGENT_REQUESTER_ADDRESS,
   ethUsdOracle: ETH_USD_ORACLE,

@@ -18,6 +18,7 @@ interface BackendVault {
   deployedAt: string
   orchestrator: string
   performanceLedger: string
+  publisherKind?: 'native' | 'custom'
   currentSignal: {
     direction: number
     sizeBps: number
@@ -52,6 +53,7 @@ function mapVault(v: BackendVault): VaultInfo {
     stats: { totalPnl: 0, sharpeRatio: 0, winRate: 0, maxDrawdown: 0, tradeCount: 0, followerCount: v.followerCount ?? 0 },
     followerCount: v.followerCount ?? 0,
     createdAt: Number(v.deployedAt ?? 0),
+    publisherKind: v.publisherKind ?? 'native',
   }
 }
 

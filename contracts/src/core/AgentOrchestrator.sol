@@ -8,10 +8,6 @@ import {ILLMInferAgent} from "../interfaces/ILLMInferAgent.sol";
 import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 
-interface IPerformanceLedger {
-    function recordTrade(int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size) external;
-}
-
 contract AgentOrchestrator is IAgentRequesterHandler {
     // Somnia testnet Protofire ETH/USD (mainnet proxy: 0x5f4eC3Df...)
     address public constant ETH_USD_ORACLE = 0xd9132c1d762D432672493F640a63B758891B449e;
@@ -234,12 +230,6 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         require(answer > 0, "invalid oracle");
         // Chainlink-style 8-decimal USD price → cents (2 decimals)
         return uint256(answer) / 1e6;
-    }
-
-    function _readOraclePriceWei() internal view returns (uint256) {
-        (, int256 answer,,,) = AggregatorV3Interface(ETH_USD_ORACLE).latestRoundData();
-        require(answer > 0, "invalid oracle");
-        return uint256(answer) * 1e10;
     }
 
     // ── Stage 1b: JSON API — Funding Rate ───────────────────────────────
@@ -511,27 +501,9 @@ contract AgentOrchestrator is IAgentRequesterHandler {
     function _handleStopResponse(string memory response, bytes32 reasoningHash) internal {
         IStrategyVault.Signal memory current = IStrategyVault(vault).getCurrentSignal();
         string memory reason = bytes(response).length > 0 ? response : "LLM decided to hold";
-        _settlePreviousTrade(current);
         IStrategyVault(vault).updateSignal(
             current.direction, current.sizeBps, current.stopPrice, reason, reasoningHash
         );
-    }
-
-    function _settlePreviousTrade(IStrategyVault.Signal memory previous) internal {
-        if (previous.direction == 0 || previous.sizeBps == 0) return;
-
-        address ledger = _performanceLedger();
-        if (ledger == address(0)) return;
-
-        uint256 mark = _readOraclePriceWei();
-        uint256 size = (uint256(previous.sizeBps) * 1e18) / 10_000;
-        IPerformanceLedger(ledger).recordTrade(previous.direction, mark, mark, size);
-    }
-
-    function _performanceLedger() internal view returns (address) {
-        (bool ok, bytes memory data) = vault.staticcall(abi.encodeWithSignature("performanceLedger()"));
-        if (!ok || data.length < 32) return address(0);
-        return abi.decode(data, (address));
     }
 
     function _executeToolCall(bytes memory calldata_, bytes32 reasoningHash) internal {
@@ -546,8 +518,6 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         if (selector == updateSig) {
             (int8 direction, uint16 sizeBps, uint256 stopPrice, string memory reasoning) =
                 abi.decode(args, (int8, uint16, uint256, string));
-            IStrategyVault.Signal memory previous = IStrategyVault(vault).getCurrentSignal();
-            _settlePreviousTrade(previous);
             IStrategyVault(vault).updateSignal(direction, sizeBps, stopPrice, reasoning, reasoningHash);
         } else if (selector == exitSig) {
             (string memory reason) = abi.decode(args, (string));
@@ -595,8 +565,6 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         (int8 direction, uint16 sizeBps, uint256 stopPrice, string memory reasoning, bytes32 reasoningHash) =
             _deriveRuleBasedSignal(run);
 
-        IStrategyVault.Signal memory previous = IStrategyVault(vault).getCurrentSignal();
-        _settlePreviousTrade(previous);
         IStrategyVault(vault).updateSignal(direction, sizeBps, stopPrice, reasoning, reasoningHash);
 
         run.stage = PipelineStage.Idle;

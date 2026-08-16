@@ -26,6 +26,8 @@ export interface VaultStats {
   followerCount: number
 }
 
+export type PublisherKind = 'native' | 'custom'
+
 export interface VaultInfo {
   address: string
   name: string
@@ -36,6 +38,7 @@ export interface VaultInfo {
   stats: VaultStats
   followerCount: number
   createdAt: number
+  publisherKind?: PublisherKind
 }
 
 export interface TradeRecord {

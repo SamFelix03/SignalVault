@@ -112,6 +112,13 @@ export const StrategyVaultABI = [
   },
   {
     type: 'function',
+    name: 'orchestrator',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'emergencyMode',
     inputs: [],
     outputs: [{ name: '', type: 'bool' }],

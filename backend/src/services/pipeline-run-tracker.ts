@@ -2,7 +2,7 @@ import { type Address } from 'viem';
 import { publicClient } from '../config/chains';
 import { AgentOrchestratorABI } from '../abis/AgentOrchestrator';
 import { PIPELINE_TIMEOUT_SEC } from '../config/constants';
-import { vaultIndexer } from './vault-indexer';
+import { vaultIndexer, isCustomAgentVault } from './vault-indexer';
 import { mirrorWorker } from './mirror-worker';
 import { schedulePipelineWatchdog } from './pipeline-watchdog';
 import { logger } from '../utils/logger';
@@ -127,6 +127,7 @@ export async function syncPipelineRun(
 export async function recoverInFlightPipelines(): Promise<void> {
   const vaults = vaultIndexer.getAllVaults();
   for (const vault of vaults) {
+    if (isCustomAgentVault(vault)) continue;
     try {
       const runId = await publicClient.readContract({
         address: vault.orchestrator,

@@ -12,6 +12,17 @@ export const VaultFactoryABI = [
   },
   {
     type: 'function',
+    name: 'deployCustomAgentVault',
+    inputs: [
+      { name: 'description', type: 'string' },
+      { name: 'performanceFeeBps', type: 'uint16' },
+      { name: 'maxDrawdownBps', type: 'uint256' },
+    ],
+    outputs: [{ name: 'vaultId', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     name: 'getDeployment',
     inputs: [{ name: 'vaultId', type: 'uint256' }],
     outputs: [

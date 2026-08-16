@@ -14,6 +14,7 @@ import {
 import {
   buildVaultSubscriptionTargets,
   encodeReactivitySubscriptionCalldata,
+  type SubscriptionTarget,
 } from '@/lib/reactivity-subscriptions'
 import { REACTIVITY_PRECOMPILE } from '@/lib/constants'
 import { API_URL } from '@/lib/contracts'
@@ -59,8 +60,13 @@ const STEP_BY_SUB: Record<string, SetupStepId> = {
   EpochCron: 'epoch-sub',
 }
 
-export function createInitialSetupSteps(): SetupStep[] {
-  return STEP_DEFS.map((d) => ({ id: d.id, label: d.label, status: 'pending' }))
+export function createInitialSetupSteps(customAgent = false): SetupStep[] {
+  return STEP_DEFS.map((d) => {
+    if (customAgent && (d.id === 'epoch-sub' || d.id === 'fund-cron' || d.id === 'trigger-pipeline')) {
+      return { id: d.id, label: d.label, status: 'skipped' as const }
+    }
+    return { id: d.id, label: d.label, status: 'pending' as const }
+  })
 }
 
 function log(
@@ -98,6 +104,7 @@ export type SetupWalletClient = {
     functionName: string
     value?: bigint
     gas?: bigint
+    args?: readonly unknown[]
   }) => Promise<Hex>
 }
 
@@ -115,6 +122,7 @@ export async function runWalletVaultSetup({
   epochCronStt = '0.5',
   fundEpochCron = true,
   triggerPipeline = true,
+  customAgent = false,
 }: {
   deployment: VaultDeployment
   walletClient: SetupWalletClient
@@ -125,10 +133,10 @@ export async function runWalletVaultSetup({
   epochCronStt?: string
   fundEpochCron?: boolean
   triggerPipeline?: boolean
+  customAgent?: boolean
 }): Promise<{ ok: boolean; error?: string }> {
   const vault = deployment.vaultAddress
 
-  // Step 1: Backend index (read-only)
   onStep('index', 'running')
   log(onLog, 'info', 'Notifying backend indexer…', 'index')
   try {
@@ -142,8 +150,7 @@ export async function runWalletVaultSetup({
     return { ok: false, error: msg }
   }
 
-  // Steps 2–5: Reactivity subscriptions (wallet signs each)
-  const targets = buildVaultSubscriptionTargets({
+  const allTargets = buildVaultSubscriptionTargets({
     vault,
     mirrorReactor: deployment.mirrorReactor,
     stopReactor: deployment.stopReactor,
@@ -151,6 +158,10 @@ export async function runWalletVaultSetup({
     epochCron: deployment.epochCron,
     performanceLedger: deployment.performanceLedger,
   })
+
+  const targets: SubscriptionTarget[] = customAgent
+    ? allTargets.filter((t) => t.name !== 'EpochCron')
+    : allTargets
 
   for (const target of targets) {
     const stepId = STEP_BY_SUB[target.name]
@@ -186,7 +197,14 @@ export async function runWalletVaultSetup({
     }
   }
 
-  // Step 6: Fund epoch cron
+  if (customAgent) {
+    onStep('epoch-sub', 'skipped')
+    onStep('fund-cron', 'skipped')
+    onStep('trigger-pipeline', 'skipped')
+    log(onLog, 'success', 'Custom agent vault ready — connect your bot via signalvault-sdk', 'index')
+    return { ok: true }
+  }
+
   if (fundEpochCron) {
     onStep('fund-cron', 'running')
     log(onLog, 'info', `Confirm ${epochCronStt} STT transfer to EpochCron in your wallet…`, 'fund-cron')
@@ -217,7 +235,6 @@ export async function runWalletVaultSetup({
     onStep('fund-cron', 'skipped')
   }
 
-  // Step 7: Trigger pipeline
   if (triggerPipeline) {
     onStep('trigger-pipeline', 'running')
     const agentBudget = JSON_FETCH_COST + LLM_PARSE_COST + LLM_INFER_COST
@@ -247,7 +264,6 @@ export async function runWalletVaultSetup({
       onStep('trigger-pipeline', 'completed', { txHash: hash })
       log(onLog, 'success', 'First agent pipeline run started', 'trigger-pipeline')
 
-      // Refresh backend index after pipeline trigger
       await indexVaultOnBackend(vault).catch(() => {})
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

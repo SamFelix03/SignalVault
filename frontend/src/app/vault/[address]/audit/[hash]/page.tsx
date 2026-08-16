@@ -51,7 +51,7 @@ export default function AuditPage({ params }: { params: Promise<{ address: strin
       .then((d) => setReceipt(d.stages ? d : d.receipt ?? d))
       .catch(err => setError(err.message))
       .finally(() => setIsLoading(false))
-  }, [hash])
+  }, [hash, address])
 
   if (isLoading) {
     return <LoadingSpinner size="lg" className="py-20" />

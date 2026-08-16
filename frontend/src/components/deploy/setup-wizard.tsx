@@ -35,6 +35,8 @@ import {
   type SetupWalletClient,
   type SetupPublicClient,
 } from '@/lib/vault-setup-runner'
+import { ConnectAgentPanel } from '@/components/deploy/connect-agent-panel'
+import { VaultAddressCard } from '@/components/deploy/vault-address-card'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -53,16 +55,17 @@ interface SetupWizardProps {
   deployment: ResolvedDeployment
   deployTxHash: Hex
   vaultName: string
+  isCustomAgent?: boolean
 }
 
-export function SetupWizard({ deployment, deployTxHash, vaultName }: SetupWizardProps) {
+export function SetupWizard({ deployment, deployTxHash, vaultName, isCustomAgent = false }: SetupWizardProps) {
   const router = useRouter()
   const { data: walletClient } = useWalletClient()
   const publicClient = usePublicClient()
 
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle')
   const [setupError, setSetupError] = useState<string | null>(null)
-  const [steps, setSteps] = useState<SetupStep[]>(createInitialSetupSteps)
+  const [steps, setSteps] = useState<SetupStep[]>(() => createInitialSetupSteps(isCustomAgent))
   const [logs, setLogs] = useState<SetupLogEntry[]>([])
   const [transactions, setTransactions] = useState<SetupTransaction[]>([])
   const [subscribeDone, setSubscribeDone] = useState(false)
@@ -129,6 +132,7 @@ export function SetupWizard({ deployment, deployTxHash, vaultName }: SetupWizard
             return [...prev, tx]
           })
         },
+        customAgent: isCustomAgent,
       })
 
       if (result.ok) {
@@ -148,7 +152,7 @@ export function SetupWizard({ deployment, deployTxHash, vaultName }: SetupWizard
 
   const deployStep: SetupStep = {
     id: 'deploy',
-    label: 'Deploy Vault (8 contracts)',
+    label: isCustomAgent ? 'Deploy Custom Agent Vault (8 contracts)' : 'Deploy Vault (8 contracts)',
     status: 'completed',
     txHash: deployTxHash,
   }
@@ -162,7 +166,7 @@ export function SetupWizard({ deployment, deployTxHash, vaultName }: SetupWizard
   const allTransactions: SetupTransaction[] = [
     {
       step: 'deploy',
-      label: 'VaultFactory.deployVault',
+      label: isCustomAgent ? 'VaultFactory.deployCustomAgentVault' : 'VaultFactory.deployVault',
       txHash: deployTxHash,
       status: 'confirmed',
     },
@@ -209,6 +213,8 @@ export function SetupWizard({ deployment, deployTxHash, vaultName }: SetupWizard
 
   return (
     <div className="space-y-6">
+      <VaultAddressCard address={vaultAddress} />
+
       <Card className="overflow-hidden border-accent/20">
         <div className="h-1 bg-secondary">
           <div
@@ -221,8 +227,7 @@ export function SetupWizard({ deployment, deployTxHash, vaultName }: SetupWizard
             <div>
               <CardTitle className="text-base">Vault Launch Sequence</CardTitle>
               <CardDescription className="mt-1">
-                {vaultName} · signed by your wallet ·{' '}
-                <span className="font-mono text-xs">{vaultAddress.slice(0, 10)}…</span>
+                {vaultName} · signed by your wallet
               </CardDescription>
             </div>
             {isRunning && (
@@ -312,6 +317,13 @@ export function SetupWizard({ deployment, deployTxHash, vaultName }: SetupWizard
         </Card>
       )}
 
+      {setupComplete && isCustomAgent && (
+        <ConnectAgentPanel
+          vaultAddress={vaultAddress}
+          publisherAddress={deployment.orchestrator}
+        />
+      )}
+
       <div className="flex flex-wrap gap-3">
         {setupComplete && !subSuccess && !subscribeDone && (
           <Button
@@ -339,7 +351,7 @@ export function SetupWizard({ deployment, deployTxHash, vaultName }: SetupWizard
           </Button>
         )}
 
-        {setupComplete && (
+        {setupComplete && !isCustomAgent && (
           <Button variant="outline" asChild>
             <Link href={`/vault/${vaultAddress}?tab=pipeline`}>View Pipeline</Link>
           </Button>

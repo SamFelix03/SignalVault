@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
-import { cn, directionLabel, directionBg, directionColor, formatPrice } from '@/lib/utils'
+import { cn, directionLabel, directionBg, directionColor, formatStopPrice } from '@/lib/utils'
 import type { Signal } from '@/types/vault'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -42,7 +42,7 @@ export function SignalDisplay({ signal }: SignalDisplayProps) {
         <div className="mt-6 grid grid-cols-3 gap-4">
           <div className="rounded-lg bg-secondary p-3">
             <p className="text-xs text-muted-foreground">Stop Price</p>
-            <p className="mt-1 font-mono text-sm text-foreground">${formatPrice(signal.stopPrice)}</p>
+            <p className="mt-1 font-mono text-sm text-foreground">${formatStopPrice(signal.stopPrice)}</p>
           </div>
           <div className="rounded-lg bg-secondary p-3">
             <p className="text-xs text-muted-foreground">Epoch</p>
