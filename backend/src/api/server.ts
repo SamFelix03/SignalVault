@@ -8,6 +8,8 @@ import { followerRouter } from './routes/followers';
 import { eventsRouter } from './routes/events';
 import { composabilityRouter } from './routes/composability';
 import { setupRouter } from './routes/setup';
+import { telegramRouter } from './routes/telegram';
+import { startTelegramBotPoller } from '../services/telegram-bot-poller';
 import { followerVaultIndex } from '../services/follower-vault-index';
 import { vaultIndexer } from '../services/vault-indexer';
 import { streamPublisher } from '../services/stream-publisher';
@@ -46,6 +48,7 @@ app.use('/api/followers', followerRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/composability', composabilityRouter);
 app.use('/api/setup', setupRouter);
+app.use('/api/telegram', telegramRouter);
 
 async function bootstrap(): Promise<void> {
   try {
@@ -66,6 +69,8 @@ async function bootstrap(): Promise<void> {
 
     await recoverInFlightPipelines();
     logger.info(CTX, 'In-flight pipeline recovery complete');
+
+    await startTelegramBotPoller();
 
     app.listen(PORT, () => {
       logger.info(CTX, `Server running on port ${PORT}`);

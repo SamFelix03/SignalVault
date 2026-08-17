@@ -5,6 +5,7 @@ import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagm
 import { parseEther, type Address } from 'viem'
 import { vaultConfig } from '@/lib/contracts'
 import { TxStatus } from '@/components/common/tx-status'
+import { TelegramAlertsSetup } from '@/components/vault/telegram-alerts-setup'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -69,7 +70,7 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          {isSubscribed ? 'Manage Subscription' : 'Subscribe to Signals'}
+          {isSubscribed ? 'Subscribed to vault' : 'Subscribe to vault'}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -121,7 +122,7 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
           </div>
         ) : (
           <div className="space-y-4">
-            <p className="text-sm text-success">You are currently subscribed to this vault.</p>
+            <p className="text-sm text-success">You are subscribed to this vault.</p>
             <Button
               variant="destructive"
               onClick={handleUnsubscribe}
@@ -130,6 +131,8 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
             >
               Unsubscribe
             </Button>
+
+            <TelegramAlertsSetup vaultAddress={vaultAddress} />
           </div>
         )}
 

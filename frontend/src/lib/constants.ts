@@ -38,6 +38,9 @@ const backendPort = process.env.NEXT_PUBLIC_BACKEND_PORT ?? '3001'
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${backendPort}`
 
+/** Telegram bot username (without @). Used for deep-link connect button. */
+export const TELEGRAM_BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? ''
+
 // ── Agent IDs ───────────────────────────────────────────────────────
 export const JSON_API_AGENT_ID = BigInt('13174292974160097713')
 export const LLM_PARSE_AGENT_ID = BigInt('12875401142070969085')

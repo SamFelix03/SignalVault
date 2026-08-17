@@ -13,6 +13,16 @@ function formatTimestamp(): string {
   return new Date().toISOString();
 }
 
+function serializeError(data: unknown): unknown {
+  if (data instanceof Error) {
+    return { name: data.name, message: data.message, stack: data.stack };
+  }
+  if (data && typeof data === 'object' && 'message' in data) {
+    return data;
+  }
+  return data;
+}
+
 function log(level: LogLevel, context: string, message: string, data?: unknown): void {
   if (LEVEL_PRIORITY[level] < LEVEL_PRIORITY[currentLevel]) return;
 
@@ -21,7 +31,7 @@ function log(level: LogLevel, context: string, message: string, data?: unknown):
     level: level.toUpperCase(),
     context,
     message,
-    ...(data !== undefined && { data }),
+    ...(data !== undefined && { data: serializeError(data) }),
   };
 
   const output = JSON.stringify(entry);

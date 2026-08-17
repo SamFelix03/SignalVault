@@ -7,6 +7,7 @@ import { SIGNAL_SCHEMA, PNL_SCHEMA, VAULT_META_SCHEMA } from '../config/schemas'
 import { WS_RPC_URL } from '../config/constants';
 import { vaultIndexer } from './vault-indexer';
 import { mirrorWorker } from './mirror-worker';
+import { notifySignal } from './telegram-notifier';
 import { logger } from '../utils/logger';
 import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import {
@@ -228,6 +229,11 @@ class StreamPublisher {
         reasoningSummary: sanitizePipelineText(decoded.reasoningSummary),
         timestamp: Number(now),
       });
+
+      await notifySignal(
+        { ...decoded, reasoningSummary: sanitizePipelineText(decoded.reasoningSummary) },
+        { epoch: now.toString(), timestamp: Number(now) },
+      );
     } catch (err) {
       logger.error(CTX, 'Failed to publish signal', err);
     }

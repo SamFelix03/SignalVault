@@ -7,6 +7,7 @@ import { logger } from '../utils/logger';
 import { sanitizePipelineText } from '../utils/sanitize-pipeline-text';
 import { eventBus } from './event-bus';
 import { computeOnChainSignalHash, mirrorWorker } from './mirror-worker';
+import { notifySignal } from './telegram-notifier';
 import { followerVaultIndex } from './follower-vault-index';
 
 const CTX = 'VaultIndexer';
@@ -297,6 +298,19 @@ class VaultIndexer {
               reasoningSummary: next.reasoningSummary,
               timestamp: Number(next.epoch) || Math.floor(Date.now() / 1000),
             }).catch((err) => logger.error(CTX, 'Mirror worker poll hook failed', err));
+
+            notifySignal(
+              {
+                vault: address,
+                signalHash,
+                direction: next.direction,
+                sizeBps: next.sizeBps,
+                stopPrice: BigInt(next.stopPrice),
+                reasoningHash,
+                reasoningSummary: next.reasoningSummary,
+              },
+              { epoch: next.epoch, timestamp: Number(next.epoch) || Math.floor(Date.now() / 1000) },
+            ).catch((err) => logger.error(CTX, 'Telegram notify poll hook failed', err));
           }
         } catch { /* skip failed polls */ }
       }
