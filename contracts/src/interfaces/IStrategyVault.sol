@@ -30,6 +30,12 @@ interface IStrategyVault {
     event FollowerSubscribed(address indexed follower);
     event FollowerUnsubscribed(address indexed follower);
     event EmergencyExit(address indexed triggeredBy, string reason);
+    event SignalFeeCharged(
+        address indexed follower,
+        address indexed strategist,
+        uint256 amount,
+        bytes32 indexed signalHash
+    );
 
     function updateSignal(
         int8 direction,
@@ -42,8 +48,11 @@ interface IStrategyVault {
     function subscribe(FollowerConfig calldata config) external payable;
     function unsubscribe() external;
     function emergencyExit(string calldata reason) external;
+    function chargeSignalFee(address follower, bytes32 signalHash) external;
     function getCurrentSignal() external view returns (Signal memory);
     function getFollowers() external view returns (address[] memory);
     function getSignalHistory(uint256 offset, uint256 limit) external view returns (Signal[] memory);
     function getFollowerConfig(address follower) external view returns (FollowerConfig memory);
+    function signalPrice() external view returns (uint256);
+    function paymentToken() external view returns (address);
 }

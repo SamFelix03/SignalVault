@@ -1,37 +1,3 @@
-const FACTORY_ABI = [
-  {
-    type: 'function',
-    name: 'getDeploymentCount',
-    inputs: [],
-    outputs: [{ name: '', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    name: 'getDeployment',
-    inputs: [{ name: 'vaultId', type: 'uint256' }],
-    outputs: [
-      {
-        name: '',
-        type: 'tuple',
-        components: [
-          { name: 'vault', type: 'address' },
-          { name: 'orchestrator', type: 'address' },
-          { name: 'mirrorReactor', type: 'address' },
-          { name: 'stopReactor', type: 'address' },
-          { name: 'drawdownGuard', type: 'address' },
-          { name: 'epochCron', type: 'address' },
-          { name: 'performanceLedger', type: 'address' },
-          { name: 'feeDistributor', type: 'address' },
-          { name: 'strategist', type: 'address' },
-          { name: 'deployedAt', type: 'uint256' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-]
-
 const STRATEGY_VAULT_ABI = [
   {
     type: 'function',
@@ -90,6 +56,34 @@ const STRATEGY_VAULT_ABI = [
     ],
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'signalPrice',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'paymentToken',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'strategyPrompt',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'mirrorReactor',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
   },
 ]
 
@@ -152,6 +146,16 @@ const ERC20_ABI = [
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
   },
+  {
+    type: 'function',
+    name: 'allowance',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
 ]
 
 const ORACLE_ABI = [
@@ -171,7 +175,6 @@ const ORACLE_ABI = [
 ]
 
 export {
-  FACTORY_ABI,
   STRATEGY_VAULT_ABI,
   MIRROR_REACTOR_ABI,
   DREAMDEX_ADAPTER_ABI,

@@ -33,7 +33,7 @@ contract ExternalSignalPublisherTest is Test {
         vault = new StrategyVault();
         publisher = new ExternalSignalPublisher();
         publisher.initialize(address(vault), owner);
-        vault.initialize(owner, owner, "Test: custom agent", 500, address(publisher));
+        vault.initialize(owner, owner, "Test: custom agent", 500, address(publisher), address(0), 0);
         publisher.addPublisher(owner);
     }
 
@@ -104,7 +104,7 @@ contract DeployCustomAgentVaultTest is Test {
 
     function test_customVaultWiresPublisherAndAllowsStrategist() public {
         vm.prank(strategist);
-        uint256 vaultId = factory.deployCustomAgentVault("RSI Bot: mean reversion", 500, 2000);
+        uint256 vaultId = factory.deployCustomAgentVault("RSI Bot: mean reversion", 500, 2000, 0);
 
         VaultFactory.VaultDeployment memory dep = factory.getDeployment(vaultId);
         assertEq(dep.strategist, strategist);
@@ -124,7 +124,7 @@ contract DeployCustomAgentVaultTest is Test {
 
     function test_customVaultRecordsTradesOnSignalChange() public {
         vm.prank(strategist);
-        uint256 vaultId = factory.deployCustomAgentVault("RSI Bot: mean reversion", 500, 2000);
+        uint256 vaultId = factory.deployCustomAgentVault("RSI Bot: mean reversion", 500, 2000, 0);
 
         VaultFactory.VaultDeployment memory dep = factory.getDeployment(vaultId);
         PerformanceLedger ledger = PerformanceLedger(payable(dep.performanceLedger));
@@ -142,7 +142,7 @@ contract DeployCustomAgentVaultTest is Test {
 
     function test_otherCannotPublishUntilAdded() public {
         vm.prank(strategist);
-        uint256 vaultId = factory.deployCustomAgentVault("Custom: test", 100, 1000);
+        uint256 vaultId = factory.deployCustomAgentVault("Custom: test", 100, 1000, 0);
         VaultFactory.VaultDeployment memory dep = factory.getDeployment(vaultId);
         ExternalSignalPublisher pub = ExternalSignalPublisher(payable(dep.orchestrator));
 

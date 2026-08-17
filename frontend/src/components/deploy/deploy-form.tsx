@@ -114,6 +114,7 @@ export function DeployForm() {
   const [description, setDescription] = useState('')
   const [feeBps, setFeeBps] = useState(500)
   const [maxDrawdownBps, setMaxDrawdownBps] = useState(2000)
+  const [signalPriceSvt, setSignalPriceSvt] = useState('0')
   const [deposit, setDeposit] = useState('1')
 
   const [phase, setPhase] = useState<DeployPhase>('form')
@@ -145,17 +146,19 @@ export function DeployForm() {
     setResolveError(null)
     setupStarted.current = false
 
+    const signalPriceWei = parseEther(signalPriceSvt || '0')
+
     if (isCustom) {
       writeContract({
         ...vaultFactoryConfig,
         functionName: 'deployCustomAgentVault',
-        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps)],
+        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps), signalPriceWei],
       })
     } else {
       writeContract({
         ...vaultFactoryConfig,
         functionName: 'deployVault',
-        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps)],
+        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps), signalPriceWei],
         value: parseEther(deposit),
       })
     }
@@ -381,6 +384,22 @@ export function DeployForm() {
                       <span>5%</span>
                       <span>50%</span>
                     </div>
+                  </div>
+
+                  <div className="space-y-2 rounded-lg border border-border/60 bg-secondary/20 p-4">
+                    <Label htmlFor="signalPrice">Signal price (SVT per signal)</Label>
+                    <Input
+                      id="signalPrice"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={signalPriceSvt}
+                      onChange={e => setSignalPriceSvt(e.target.value)}
+                      className="max-w-xs font-mono"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Set to 0 for free signals. Followers approve SVT spending when subscribing.
+                    </p>
                   </div>
                 </div>
               </FormSection>

@@ -5,7 +5,15 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {DreamDexAdapter} from "../integrations/DreamDexAdapter.sol";
 
 interface IInitVault {
-    function initialize(address, address, string calldata, uint16, address) external;
+    function initialize(
+        address,
+        address,
+        string calldata,
+        uint16,
+        address,
+        address,
+        uint256
+    ) external;
     function setReactors(address, address, address) external;
     function setPerformanceLedger(address) external;
 }
@@ -71,6 +79,7 @@ contract VaultFactory {
 
     address public owner;
     address public dexAddress;
+    address public paymentToken;
 
     struct VaultDeployment {
         address vault;
@@ -143,12 +152,18 @@ contract VaultFactory {
         dexAddress = _dex;
     }
 
+    function setPaymentToken(address _paymentToken) external onlyOwner {
+        require(_paymentToken != address(0), "zero address");
+        paymentToken = _paymentToken;
+    }
+
     /// @notice Deploy a complete vault system in a single transaction.
     ///         The caller becomes the strategist. Send STT to fund the agent pipeline.
     function deployVault(
         string calldata strategyPrompt,
         uint16 performanceFeeBps,
-        uint256 maxDrawdownBps
+        uint256 maxDrawdownBps,
+        uint256 signalPricePerSignal
     ) external payable returns (uint256 vaultId) {
         VaultDeployment memory dep;
         dep.strategist = msg.sender;
@@ -163,7 +178,8 @@ contract VaultFactory {
             AGENT_PLATFORM, dep.vault, address(this), strategyPrompt
         );
         IInitVault(dep.vault).initialize(
-            address(this), dep.strategist, strategyPrompt, performanceFeeBps, dep.orchestrator
+            address(this), dep.strategist, strategyPrompt, performanceFeeBps, dep.orchestrator,
+            paymentToken, signalPricePerSignal
         );
 
         // Clone + init support contracts
@@ -203,7 +219,8 @@ contract VaultFactory {
     function deployCustomAgentVault(
         string calldata description,
         uint16 performanceFeeBps,
-        uint256 maxDrawdownBps
+        uint256 maxDrawdownBps,
+        uint256 signalPricePerSignal
     ) external returns (uint256 vaultId) {
         require(implPublisher != address(0), "publisher impl unset");
 
@@ -216,7 +233,8 @@ contract VaultFactory {
 
         IInitPublisher(dep.orchestrator).initialize(dep.vault, address(this));
         IInitVault(dep.vault).initialize(
-            address(this), dep.strategist, description, performanceFeeBps, dep.orchestrator
+            address(this), dep.strategist, description, performanceFeeBps, dep.orchestrator,
+            paymentToken, signalPricePerSignal
         );
 
         _deploySupport(dep, performanceFeeBps, maxDrawdownBps);

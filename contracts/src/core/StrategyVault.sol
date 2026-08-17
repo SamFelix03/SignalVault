@@ -8,12 +8,19 @@ interface IPerformanceLedger {
     function markToMarket() external view returns (uint256 price, uint256 updatedAt);
 }
 
+interface IERC20 {
+    function allowance(address owner, address spender) external view returns (uint256);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
 contract StrategyVault is IStrategyVault {
     address public owner;
     address public strategist;
     address public orchestrator;
     string public strategyPrompt;
     uint16 public performanceFeeBps;
+    address public paymentToken;
+    uint256 public signalPrice;
     bool public agentRunning;
     bool public emergencyMode;
     bool private _initialized;
@@ -23,6 +30,7 @@ contract StrategyVault is IStrategyVault {
     Signal[] private _signalHistory;
 
     mapping(address => FollowerConfig) public followers;
+    mapping(address => bool) public paymentAuthorized;
     address[] public followerList;
     mapping(address => uint256) public followerIndex;
 
@@ -33,6 +41,11 @@ contract StrategyVault is IStrategyVault {
 
     /// @dev Oracle-scaled entry price (18 decimals) for the open strategist leg.
     uint256 private _positionEntryPrice;
+
+    modifier onlyMirrorReactor() {
+        require(msg.sender == mirrorReactor, "not mirror reactor");
+        _;
+    }
 
     modifier onlyOwner() {
         require(msg.sender == owner, "not owner");
@@ -63,7 +76,9 @@ contract StrategyVault is IStrategyVault {
         address _strategist,
         string calldata _strategyPrompt,
         uint16 _performanceFeeBps,
-        address _orchestrator
+        address _orchestrator,
+        address _paymentToken,
+        uint256 _signalPrice
     ) external {
         require(!_initialized, "already initialized");
         require(_performanceFeeBps <= 5000, "fee too high");
@@ -73,6 +88,8 @@ contract StrategyVault is IStrategyVault {
         strategyPrompt = _strategyPrompt;
         performanceFeeBps = _performanceFeeBps;
         orchestrator = _orchestrator;
+        paymentToken = _paymentToken;
+        signalPrice = _signalPrice;
     }
 
     function setReactors(
@@ -158,6 +175,15 @@ contract StrategyVault is IStrategyVault {
         require(config.maxPositionSize > 0, "invalid max position");
         require(config.maxSlippageBps <= 1000, "slippage too high");
 
+        if (signalPrice > 0) {
+            require(paymentToken != address(0), "payment token unset");
+            require(
+                IERC20(paymentToken).allowance(msg.sender, address(this)) >= signalPrice,
+                "insufficient allowance"
+            );
+            paymentAuthorized[msg.sender] = true;
+        }
+
         followers[msg.sender] = config;
         followers[msg.sender].active = true;
         followerIndex[msg.sender] = followerList.length;
@@ -166,10 +192,24 @@ contract StrategyVault is IStrategyVault {
         emit FollowerSubscribed(msg.sender);
     }
 
+    function chargeSignalFee(address follower, bytes32 signalHash) external onlyMirrorReactor {
+        if (signalPrice == 0 || paymentToken == address(0)) return;
+        require(paymentAuthorized[follower], "payment not authorized");
+        require(followers[follower].active, "not subscribed");
+
+        require(
+            IERC20(paymentToken).transferFrom(follower, strategist, signalPrice),
+            "payment failed"
+        );
+
+        emit SignalFeeCharged(follower, strategist, signalPrice, signalHash);
+    }
+
     function unsubscribe() external nonReentrant {
         require(followers[msg.sender].active, "not subscribed");
 
         followers[msg.sender].active = false;
+        paymentAuthorized[msg.sender] = false;
 
         uint256 idx = followerIndex[msg.sender];
         uint256 lastIdx = followerList.length - 1;

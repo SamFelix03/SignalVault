@@ -13,6 +13,7 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY
 const RPC_URL = process.env.RPC_URL ?? SOMNIA_RPC
 const INTERVAL_MS = Number(process.env.INTERVAL_MS ?? 300_000)
 const ENABLE_DREAMDEX = process.env.ENABLE_DREAMDEX !== '0'
+const FORCE_PUBLISH = process.env.FORCE_PUBLISH === '1' || process.env.FORCE_PUBLISH === 'true'
 const INFERENCE_MODE = (process.env.INFERENCE_MODE ?? 'rules').toLowerCase()
 
 const chain = {
@@ -68,6 +69,7 @@ async function bootstrap() {
       : ''
   }`)
   console.log(`  dreamDEX:  ${ENABLE_DREAMDEX ? 'enabled' : 'disabled'}`)
+  console.log(`  publish:   ${FORCE_PUBLISH ? 'force every run' : 'only when direction/size changes'}`)
 
   if (ENABLE_DREAMDEX) {
     console.log('\n── dreamDEX setup ──')
@@ -76,9 +78,6 @@ async function bootstrap() {
       walletClient,
       account,
       vaultAddress: VAULT_ADDRESS,
-      factoryAddresses: process.env.VAULT_FACTORY_ADDRESS
-        ? [process.env.VAULT_FACTORY_ADDRESS, process.env.LEGACY_VAULT_FACTORY_ADDRESS].filter(Boolean)
-        : undefined,
       riskPct: Number(process.env.RISK_PCT ?? 1000),
       maxPositionEth: process.env.MAX_POSITION_ETH ?? '0.05',
       maxSlippageBps: Number(process.env.MAX_SLIPPAGE_BPS ?? 300),
@@ -110,9 +109,13 @@ async function tick() {
   console.log(`  Reasoning: ${signal.reason}`)
 
   const candidate = { directionNum: signal.directionNum, sizeBps: signal.sizeBps }
-  if (!signalChanged(onChain, candidate)) {
+  if (!FORCE_PUBLISH && !signalChanged(onChain, candidate)) {
     console.log('  → skip publish (on-chain signal unchanged)\n')
     return
+  }
+
+  if (FORCE_PUBLISH && !signalChanged(onChain, candidate)) {
+    console.log('  → force publish (FORCE_PUBLISH=1)')
   }
 
   const hash = await vault.publish({

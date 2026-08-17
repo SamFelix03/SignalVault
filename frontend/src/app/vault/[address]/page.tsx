@@ -103,6 +103,12 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
     query: { enabled: !isMockMode() },
   })
 
+  const { data: signalPriceOnChain } = useReadContract({
+    ...vaultConfig(vaultAddress),
+    functionName: 'signalPrice',
+    query: { enabled: !isMockMode() },
+  })
+
   const [stats, setStats] = useState<VaultStats>(
     isMockMode()
       ? getMockStats(address)
@@ -123,14 +129,15 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
         if (d) {
           const totalTrades = Number(d.totalTrades ?? 0)
           const winCount = Number(d.winCount ?? 0)
-          setStats({
+          setStats(prev => ({
+            ...prev,
             totalPnl: Number(d.totalPnl ?? 0) / 1e18,
             sharpeRatio: Number(d.sharpeApprox ?? 0) / 1000,
             winRate: Number(d.winRate ?? 0) / 10000,
             maxDrawdown: Number(d.maxDrawdownBps ?? 0) / 100,
             tradeCount: totalTrades,
-            followerCount: followerCountData ? Number(followerCountData) : 0,
-          })
+            followerCount: followerCountData ? Number(followerCountData) : prev.followerCount,
+          }))
           if (d.vault) {
             setPerformanceLedgerAddr(undefined)
           }
@@ -147,6 +154,9 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
         }
         if (vault?.followerCount != null) {
           setStats(prev => ({ ...prev, followerCount: Number(vault.followerCount) }))
+        }
+        if (vault?.signalPrice != null) {
+          setStats(prev => ({ ...prev, signalPrice: String(vault.signalPrice) }))
         }
         if (vault?.publisherKind) {
           setPublisherKind(vault.publisherKind as PublisherKind)
@@ -253,7 +263,15 @@ export default function VaultDetailPage({ params }: { params: Promise<{ address:
 
             <div className="space-y-6">
               {!isCustomVault && <PipelineStatus currentStage={stage} isRunning={isRunning} />}
-              <VaultStatsPanel stats={stats} />
+              <VaultStatsPanel
+                stats={{
+                  ...stats,
+                  signalPrice:
+                    signalPriceOnChain != null
+                      ? String(signalPriceOnChain)
+                      : stats.signalPrice,
+                }}
+              />
               <SubscribeForm
                 vaultAddress={vaultAddress}
                 isSubscribed={position?.active ?? false}

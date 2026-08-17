@@ -12,6 +12,7 @@ import {DrawdownGuard} from "../src/reactivity/DrawdownGuard.sol";
 import {EpochCron} from "../src/reactivity/EpochCron.sol";
 import {PerformanceLedger} from "../src/finance/PerformanceLedger.sol";
 import {FeeDistributor} from "../src/finance/FeeDistributor.sol";
+import {SignalPayToken} from "../src/finance/SignalPayToken.sol";
 
 /// @notice Local simulation / gas preview only.
 /// @dev Do NOT use `forge script ... --broadcast` on Somnia testnet — CREATE gas is
@@ -53,11 +54,15 @@ contract DeployAll is Script {
         address implFees = address(new FeeDistributor());
         console.log("Impl FeeDistributor:", implFees);
 
+        address paymentToken = address(new SignalPayToken());
+        console.log("SignalPayToken:", paymentToken);
+
         VaultFactory factory = new VaultFactory(
             implVault, implOrch, implMirror, implStop,
             implGuard, implCron, implLedger, implFees, implPublisher
         );
         console.log("VaultFactory:", address(factory));
+        console.log("Set factory payment token: factory.setPaymentToken(%s)", paymentToken);
 
         vm.stopBroadcast();
         console.log("--- SIMULATION COMPLETE (use script/deploy.sh to deploy) ---");

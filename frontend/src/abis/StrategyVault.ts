@@ -152,6 +152,27 @@ export const StrategyVaultABI = [
   },
   {
     type: 'function',
+    name: 'signalPrice',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'paymentToken',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'paymentAuthorized',
+    inputs: [{ name: 'follower', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'emergencyMode',
     inputs: [],
     outputs: [{ name: '', type: 'bool' }],
@@ -199,6 +220,16 @@ export const StrategyVaultABI = [
     inputs: [
       { name: 'triggeredBy', type: 'address', indexed: true },
       { name: 'reason', type: 'string', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'SignalFeeCharged',
+    inputs: [
+      { name: 'follower', type: 'address', indexed: true },
+      { name: 'strategist', type: 'address', indexed: false },
+      { name: 'amount', type: 'uint256', indexed: false },
+      { name: 'signalHash', type: 'bytes32', indexed: true },
     ],
   },
 ] as const

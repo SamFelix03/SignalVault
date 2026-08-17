@@ -14,8 +14,12 @@ export const REACTIVITY_PRECOMPILE = '0x0000000000000000000000000000000000000100
 export const ETH_USD_ORACLE = '0xd9132c1d762D432672493F640a63B758891B449e' as Address
 
 // ── SignalVault Deployed Contracts (Somnia Testnet) ─────────────────
-export const VAULT_FACTORY_ADDRESS = '0x68491CE1f69E8B0DFC25a1F6DE51A1a15825E612' as Address
+export const VAULT_FACTORY_ADDRESS = '0xcA1E5CDD728A878b0453875d9e5A50EABaF328Aa' as Address
 export const LEGACY_VAULT_FACTORY_ADDRESS = '0x4e4D20D7bc954FDe4C447a21255B9eD39cfAb938' as Address
+export const EXTRA_VAULT_FACTORY_ADDRESSES = [
+  '0x68491CE1f69E8B0DFC25a1F6DE51A1a15825E612',
+  '0x5C5E7222C2Ed5DE198398F67d7574cAa87012E9e',
+] as Address[]
 
 // Demo vault deployed via factory.deployVault()
 export const SHARPE_GATED_LENDING_ADDRESS = '0xc8F4E595f3C4ad57682ED48C52C3467EA67dBD97' as Address
@@ -40,6 +44,9 @@ export const API_URL =
 
 /** Telegram bot username (without @). Used for deep-link connect button. */
 export const TELEGRAM_BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? ''
+
+/** ERC-20 payment token for pay-per-signal (SVT). Deploy via contracts/script/deploy.sh */
+export const PAYMENT_TOKEN_ADDRESS = (process.env.NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS ?? '') as Address
 
 // ── Agent IDs ───────────────────────────────────────────────────────
 export const JSON_API_AGENT_ID = BigInt('13174292974160097713')

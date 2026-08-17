@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   ChevronLeft,
   ChevronRight,
+  Coins,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -23,6 +24,7 @@ const navItems = [
   { href: '/', label: 'Leaderboard', icon: BarChart3, exact: true },
   { href: '/deploy', label: 'Deploy Vault', icon: Rocket, exact: false },
   { href: '/follow', label: 'Follow Dashboard', icon: LayoutDashboard, exact: false },
+  { href: '/token', label: 'Get SVT', icon: Coins, exact: false },
   { href: '/composability', label: 'Composability', icon: Activity, exact: false },
 ]
 

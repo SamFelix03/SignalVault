@@ -1,44 +1,10 @@
 import { parseEther } from 'viem'
 import {
-  FACTORY_ABI,
   STRATEGY_VAULT_ABI,
   MIRROR_REACTOR_ABI,
   DREAMDEX_ADAPTER_ABI,
   ERC20_ABI,
 } from './abis.js'
-
-const DEFAULT_FACTORIES = [
-  '0x68491CE1f69E8B0DFC25a1F6DE51A1a15825E612',
-  '0x4e4D20D7bc954FDe4C447a21255B9eD39cfAb938',
-  '0x5C5E7222C2Ed5DE198398F67d7574cAa87012E9e',
-]
-
-export async function resolveVaultDeployment(publicClient, vaultAddress, factoryAddresses) {
-  const factories = factoryAddresses?.length ? factoryAddresses : DEFAULT_FACTORIES
-
-  for (const factory of factories) {
-    const count = await publicClient.readContract({
-      address: factory,
-      abi: FACTORY_ABI,
-      functionName: 'getDeploymentCount',
-    })
-
-    for (let i = 0n; i < count; i++) {
-      const dep = await publicClient.readContract({
-        address: factory,
-        abi: FACTORY_ABI,
-        functionName: 'getDeployment',
-        args: [i],
-      })
-
-      if (dep.vault.toLowerCase() === vaultAddress.toLowerCase()) {
-        return dep
-      }
-    }
-  }
-
-  throw new Error(`Vault ${vaultAddress} not found in known factories`)
-}
 
 export async function readCurrentSignal(publicClient, vaultAddress) {
   const signal = await publicClient.readContract({
@@ -56,15 +22,14 @@ export async function readCurrentSignal(publicClient, vaultAddress) {
 }
 
 /**
- * dreamDEX trades fire via MirrorReactor when subscribed followers receive SignalUpdated.
- * The native agent uses the same path — strategist must subscribe to mirror their own signals.
+ * Optional dreamDEX bootstrap — reads mirror reactor from the vault contract directly.
+ * Agent authors only need VAULT_ADDRESS; no factory addresses required.
  */
 export async function ensureDreamDexTrading({
   publicClient,
   walletClient,
   account,
   vaultAddress,
-  factoryAddresses,
   riskPct = 1000,
   maxPositionEth = '0.05',
   maxSlippageBps = 300,
@@ -72,8 +37,15 @@ export async function ensureDreamDexTrading({
   quoteDepositUsd = '100',
   baseDepositEth = '0',
 }) {
-  const dep = await resolveVaultDeployment(publicClient, vaultAddress, factoryAddresses)
-  const mirrorReactor = dep.mirrorReactor
+  const mirrorReactor = await publicClient.readContract({
+    address: vaultAddress,
+    abi: STRATEGY_VAULT_ABI,
+    functionName: 'mirrorReactor',
+  })
+
+  if (!mirrorReactor || mirrorReactor === '0x0000000000000000000000000000000000000000') {
+    throw new Error(`Vault ${vaultAddress} has no mirror reactor configured`)
+  }
 
   const dexAdapter = await publicClient.readContract({
     address: mirrorReactor,
@@ -89,6 +61,42 @@ export async function ensureDreamDexTrading({
   })
 
   if (!followerConfig.active) {
+    const signalPrice = await publicClient.readContract({
+      address: vaultAddress,
+      abi: STRATEGY_VAULT_ABI,
+      functionName: 'signalPrice',
+    }).catch(() => 0n)
+
+    if (signalPrice > 0n) {
+      const paymentToken = await publicClient.readContract({
+        address: vaultAddress,
+        abi: STRATEGY_VAULT_ABI,
+        functionName: 'paymentToken',
+      })
+
+      const budget = signalPrice * 50n
+      const allowance = await publicClient.readContract({
+        address: paymentToken,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [account.address, vaultAddress],
+      })
+
+      if (allowance < budget) {
+        console.log(`Approving SVT for signal payments (budget: ${budget} wei)...`)
+        const approveHash = await walletClient.writeContract({
+          address: paymentToken,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [vaultAddress, budget],
+          account,
+          chain: walletClient.chain,
+        })
+        await publicClient.waitForTransactionReceipt({ hash: approveHash })
+        console.log(`SVT approved: ${approveHash}`)
+      }
+    }
+
     console.log('Subscribing strategist wallet to vault (enables dreamDEX mirroring)...')
     const hash = await walletClient.writeContract({
       address: vaultAddress,

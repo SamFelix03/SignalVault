@@ -2,6 +2,8 @@
 
 Publish trading signals to **custom agent** SignalVault vaults on Somnia testnet.
 
+**You only need two things:** your vault address and your publisher wallet private key. No factory addresses, no deployment registry, no mirror reactor config.
+
 ```bash
 npm install signalvault-sdk
 ```
@@ -12,8 +14,8 @@ npm install signalvault-sdk
 import { SignalVault } from 'signalvault-sdk'
 
 const vault = new SignalVault({
-  vault: process.env.VAULT_ADDRESS!,
-  privateKey: process.env.PRIVATE_KEY!,
+  vault: process.env.VAULT_ADDRESS!,   // from /vault/0x... after deploy
+  privateKey: process.env.PRIVATE_KEY!, // wallet authorized as publisher
 })
 
 await vault.publish({
@@ -24,6 +26,14 @@ await vault.publish({
 })
 ```
 
-Your wallet must be an authorized publisher on the vault's `ExternalSignalPublisher` (the deployer is added automatically).
+## What the SDK reads on-chain
 
-Native prompt-agent vaults are **not** supported — use this SDK only with vaults deployed via `deployCustomAgentVault`.
+Given your `vault` address, the SDK automatically:
+
+1. Calls `vault.orchestrator()` to find the publisher contract
+2. Verifies it is an external agent publisher (`isCustomPublisher()`)
+3. Sends `publish(...)` on that publisher
+
+Your wallet must already be an authorized publisher on that contract (the deployer is added automatically).
+
+Native on-chain AI vaults are **not** supported — use a custom-agent vault address only.

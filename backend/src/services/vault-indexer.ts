@@ -28,6 +28,8 @@ export interface VaultInfo {
   deployedAt: string;
   strategyPrompt: string;
   performanceFeeBps: number;
+  signalPrice?: string;
+  paymentToken?: string;
   followerCount: number;
   publisherKind: PublisherKind;
   factoryAddress: Address;
@@ -158,10 +160,12 @@ class VaultIndexer {
 
       const vaultAddr = dep.vault;
 
-      const [strategist, strategyPrompt, performanceFeeBps, publisherKind] = await Promise.all([
+      const [strategist, strategyPrompt, performanceFeeBps, signalPrice, paymentToken, publisherKind] = await Promise.all([
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'strategist' }),
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'strategyPrompt' }),
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'performanceFeeBps' }),
+        publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'signalPrice' }).catch(() => 0n),
+        publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'paymentToken' }).catch(() => '0x0000000000000000000000000000000000000000'),
         this.detectPublisherKind(dep.orchestrator),
       ]);
 
@@ -185,6 +189,8 @@ class VaultIndexer {
         deployedAt: dep.deployedAt.toString(),
         strategyPrompt: strategyPrompt as string,
         performanceFeeBps: Number(performanceFeeBps),
+        signalPrice: String(signalPrice),
+        paymentToken: String(paymentToken),
         followerCount,
         publisherKind,
         factoryAddress,

@@ -1,6 +1,7 @@
 'use client'
 
-import { TrendingUp, BarChart3, Target, TrendingDown, Hash, Users } from 'lucide-react'
+import { TrendingUp, BarChart3, Target, TrendingDown, Hash, Users, Coins } from 'lucide-react'
+import { formatEther } from 'viem'
 import { formatPnlPercent } from '@/lib/utils'
 import { MetricCard } from '@/components/common/metric-card'
 import type { VaultStats as VaultStatsType } from '@/types/vault'
@@ -46,6 +47,15 @@ export function VaultStatsPanel({ stats }: VaultStatsProps) {
       value: String(stats.followerCount ?? 0),
       changeType: 'neutral' as const,
       icon: Users,
+    },
+    {
+      title: 'Signal Price',
+      value:
+        stats.signalPrice && stats.signalPrice !== '0'
+          ? `${formatEther(BigInt(stats.signalPrice))} SVT`
+          : 'Free',
+      changeType: 'neutral' as const,
+      icon: Coins,
     },
   ]
 

@@ -112,6 +112,20 @@ export const StrategyVaultABI = [
   },
   {
     type: 'function',
+    name: 'signalPrice',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'paymentToken',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'orchestrator',
     inputs: [],
     outputs: [{ name: '', type: 'address' }],

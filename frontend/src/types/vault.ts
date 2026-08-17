@@ -24,6 +24,7 @@ export interface VaultStats {
   maxDrawdown: number
   tradeCount: number
   followerCount: number
+  signalPrice?: string
 }
 
 export type PublisherKind = 'native' | 'custom'

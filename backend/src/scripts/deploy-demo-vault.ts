@@ -8,7 +8,7 @@ import { VAULT_FACTORY_ADDRESS, RPC_URL } from '../config/constants';
 import { somniaTestnet } from '../config/chains';
 
 const factoryAbi = parseAbi([
-  'function deployVault(string strategyPrompt, uint16 performanceFeeBps, uint256 maxDrawdownBps) payable returns (uint256)',
+  'function deployVault(string strategyPrompt, uint16 performanceFeeBps, uint256 maxDrawdownBps, uint256 signalPricePerSignal) payable returns (uint256)',
   'function getDeployment(uint256) view returns (address vault, address orchestrator, address mirrorReactor, address stopReactor, address drawdownGuard, address epochCron, address performanceLedger, address feeDistributor, address strategist, uint256 deployedAt)',
   'function getDeploymentCount() view returns (uint256)',
 ]);
@@ -39,18 +39,21 @@ async function main() {
   const maxDrawdownBps = BigInt(process.env.MAX_DRAWDOWN_BPS || '2000'); // 20% default
   const fundingAmount = parseEther(process.env.FUNDING_STT || '2'); // 2 STT for agent pipeline
 
+  const signalPricePerSignal = parseEther(process.env.SIGNAL_PRICE_SVT || '0');
+
   console.log('\nDeploying vault via factory:', VAULT_FACTORY_ADDRESS);
   console.log('\nDeploying vault...');
   console.log('  Strategy:', strategyPrompt.slice(0, 80) + '...');
   console.log('  Fee:', feeBps / 100, '%');
   console.log('  Max Drawdown:', Number(maxDrawdownBps) / 100, '%');
   console.log('  Funding:', (Number(fundingAmount) / 1e18).toFixed(2), 'STT');
+  console.log('  Signal price:', process.env.SIGNAL_PRICE_SVT || '0', 'SVT');
 
   const hash = await walletClient.writeContract({
     address: VAULT_FACTORY_ADDRESS,
     abi: factoryAbi,
     functionName: 'deployVault',
-    args: [strategyPrompt, feeBps, maxDrawdownBps],
+    args: [strategyPrompt, feeBps, maxDrawdownBps, signalPricePerSignal],
     value: fundingAmount,
   });
 

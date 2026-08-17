@@ -26,7 +26,7 @@ async function main() {
     address: factory,
     abi: VaultFactoryABI,
     functionName: 'deployCustomAgentVault',
-    args: [description, feeBps, maxDrawdownBps],
+    args: [description, feeBps, maxDrawdownBps, 0n],
     account,
     chain: wallet.chain,
   })

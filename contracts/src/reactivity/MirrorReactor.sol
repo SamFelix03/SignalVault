@@ -120,6 +120,12 @@ contract MirrorReactor is SomniaEventHandler {
 
             if (direction == 0) continue;
 
+            try IStrategyVault(vault).chargeSignalFee(follower, signalHash) {
+            } catch {
+                emit MirrorFailed(follower, "signal payment failed");
+                continue;
+            }
+
             // Quote notional in USDso (18 decimals): maxPosition × signal size × risk scaling
             uint256 quoteNotional = (config.maxPositionSize * uint256(sizeBps) * uint256(config.riskPct))
                 / (10_000 * 100);

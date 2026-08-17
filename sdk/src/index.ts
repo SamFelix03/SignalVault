@@ -107,7 +107,8 @@ export class SignalVault {
 
     if (!isCustom) {
       throw new Error(
-        'This vault uses the native SignalVault AI pipeline. signalvault-sdk only works with custom agent vaults deployed via deployCustomAgentVault.',
+        'This vault uses the on-chain AI pipeline, not an external agent. ' +
+          'Point the SDK at a custom-agent vault address (from your deploy URL).',
       )
     }
 
