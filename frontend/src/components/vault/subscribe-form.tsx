@@ -62,7 +62,7 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
   const hasEnoughAllowance =
     !isPaidVault || (allowance !== undefined && allowance >= price)
   const hasUnlimitedAllowance =
-    allowance !== undefined && allowance >= maxUint256 / 2n
+    allowance !== undefined && allowance >= maxUint256 / BigInt(2)
   const hasEnoughBalance =
     !isPaidVault || (tokenBalance !== undefined && tokenBalance >= price)
 
