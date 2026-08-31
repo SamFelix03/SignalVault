@@ -502,7 +502,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         IStrategyVault.Signal memory current = IStrategyVault(vault).getCurrentSignal();
         string memory reason = bytes(response).length > 0 ? response : "LLM decided to hold";
         IStrategyVault(vault).updateSignal(
-            current.direction, current.sizeBps, current.stopPrice, reason, reasoningHash
+            current.direction, current.sizeBps, current.marketId, current.limitPrice, reason, reasoningHash
         );
     }
 
@@ -518,7 +518,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         if (selector == updateSig) {
             (int8 direction, uint16 sizeBps, uint256 stopPrice, string memory reasoning) =
                 abi.decode(args, (int8, uint16, uint256, string));
-            IStrategyVault(vault).updateSignal(direction, sizeBps, stopPrice, reasoning, reasoningHash);
+            IStrategyVault(vault).updateSignal(direction, sizeBps, bytes32(0), stopPrice, reasoning, reasoningHash);
         } else if (selector == exitSig) {
             (string memory reason) = abi.decode(args, (string));
             IStrategyVault(vault).emergencyExit(reason);
@@ -565,7 +565,7 @@ contract AgentOrchestrator is IAgentRequesterHandler {
         (int8 direction, uint16 sizeBps, uint256 stopPrice, string memory reasoning, bytes32 reasoningHash) =
             _deriveRuleBasedSignal(run);
 
-        IStrategyVault(vault).updateSignal(direction, sizeBps, stopPrice, reasoning, reasoningHash);
+        IStrategyVault(vault).updateSignal(direction, sizeBps, bytes32(0), stopPrice, reasoning, reasoningHash);
 
         run.stage = PipelineStage.Idle;
         run.flags |= 8;

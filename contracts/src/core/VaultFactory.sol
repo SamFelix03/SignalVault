@@ -2,7 +2,9 @@
 pragma solidity 0.8.30;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
-import {DreamDexAdapter} from "../integrations/DreamDexAdapter.sol";
+import {EventContractsRouter} from "../integrations/EventContractsRouter.sol";
+import {PerpRouter} from "../integrations/PerpRouter.sol";
+import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
 
 interface IInitVault {
     function initialize(
@@ -12,10 +14,15 @@ interface IInitVault {
         uint16,
         address,
         address,
-        uint256
+        uint256,
+        IStrategyVault.SourceType,
+        IStrategyVault.InstrumentType,
+        address,
+        address
     ) external;
     function setReactors(address, address, address) external;
     function setPerformanceLedger(address) external;
+    function setEventRouter(address) external;
 }
 
 interface IInitOrchestrator {
@@ -28,11 +35,6 @@ interface IInitPublisher {
 }
 
 interface IInitMirror {
-    function initialize(address, address, address) external;
-    function setPerformanceLedger(address) external;
-}
-
-interface IInitStop {
     function initialize(address, address, address) external;
 }
 
@@ -60,7 +62,6 @@ interface ITransferOwnership {
 contract VaultFactory {
     using Clones for address;
 
-    // ── Implementation addresses (deployed once, cloned for each vault) ──
     address public implVault;
     address public implOrchestrator;
     address public implMirrorReactor;
@@ -71,15 +72,16 @@ contract VaultFactory {
     address public implFeeDistributor;
     address public implPublisher;
 
-    // Somnia platform constants
     address public constant AGENT_PLATFORM = 0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776;
-    // Somnia testnet Protofire ETH/USD (mainnet proxy: 0x5f4eC3Df...)
     address public constant ETH_USD_ORACLE = 0xd9132c1d762D432672493F640a63B758891B449e;
-    address public constant DREAMDEX_WETH_POOL = 0xD180195da5459C7a0DEA188ed61216ec43682b50;
+    /// @dev dreamDEX event-contract collateral on Somnia Shannon testnet (6 decimals).
+    address public constant TESTNET_COLLATERAL = 0x70a86D8842FB63C4Ad2b7cdddF530eBf1BB25d8E;
+    /// @dev Perp margin collateral on Shannon testnet (18 decimals).
+    address public constant TESTNET_PERP_COLLATERAL = 0x9c32F3827A1a99f0cf9B213de8b53eC3d57bb171;
+  address public constant TESTNET_MARGIN_BANK = 0xdd4A14A2763FDa39b9759D2D4150DB0e0f085C4E;
 
     address public owner;
-    address public dexAddress;
-    address public paymentToken;
+    address public relayer;
 
     struct VaultDeployment {
         address vault;
@@ -90,6 +92,8 @@ contract VaultFactory {
         address epochCron;
         address performanceLedger;
         address feeDistributor;
+        address eventRouter;
+        IStrategyVault.InstrumentType instrumentType;
         address strategist;
         uint256 deployedAt;
     }
@@ -104,9 +108,9 @@ contract VaultFactory {
         address indexed strategist,
         address orchestrator,
         address mirrorReactor,
-        address stopReactor,
-        address drawdownGuard,
-        address epochCron
+        address eventRouter,
+        IStrategyVault.SourceType sourceType,
+        IStrategyVault.InstrumentType instrumentType
     );
 
     event ImplementationsSet(
@@ -148,80 +152,57 @@ contract VaultFactory {
         );
     }
 
-    function setDexAddress(address _dex) external onlyOwner {
-        dexAddress = _dex;
+    /// @dev Event-contract collateral and per-signal fees both use tUSDC on testnet.
+    function collateralToken() external pure returns (address) {
+        return TESTNET_COLLATERAL;
     }
 
-    function setPaymentToken(address _paymentToken) external onlyOwner {
-        require(_paymentToken != address(0), "zero address");
-        paymentToken = _paymentToken;
+    function setRelayer(address _relayer) external onlyOwner {
+        relayer = _relayer;
     }
 
-    /// @notice Deploy a complete vault system in a single transaction.
-    ///         The caller becomes the strategist. Send STT to fund the agent pipeline.
     function deployVault(
         string calldata strategyPrompt,
         uint16 performanceFeeBps,
         uint256 maxDrawdownBps,
-        uint256 signalPricePerSignal
+        uint256 signalPricePerSignal,
+        IStrategyVault.InstrumentType instrument
     ) external payable returns (uint256 vaultId) {
-        VaultDeployment memory dep;
-        dep.strategist = msg.sender;
-        dep.deployedAt = block.timestamp;
-
-        // Clone core contracts
-        dep.orchestrator = implOrchestrator.clone();
-        dep.vault = implVault.clone();
-
-        // Initialize core — factory is temporary owner so it can wire reactors
-        IInitOrchestrator(dep.orchestrator).initialize(
-            AGENT_PLATFORM, dep.vault, address(this), strategyPrompt
-        );
-        IInitVault(dep.vault).initialize(
-            address(this), dep.strategist, strategyPrompt, performanceFeeBps, dep.orchestrator,
-            paymentToken, signalPricePerSignal
-        );
-
-        // Clone + init support contracts
-        _deploySupport(dep, performanceFeeBps, maxDrawdownBps);
-
-        // Wire vault and mirror → ledger
-        IInitVault(dep.vault).setReactors(dep.mirrorReactor, dep.stopReactor, dep.drawdownGuard);
-        IInitVault(dep.vault).setPerformanceLedger(dep.performanceLedger);
-        IInitMirror(dep.mirrorReactor).setPerformanceLedger(dep.performanceLedger);
-        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.orchestrator);
-        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.mirrorReactor);
-
-        // Transfer ownership from factory to strategist
-        ITransferOwnership(dep.vault).transferOwnership(dep.strategist);
-        ITransferOwnership(dep.orchestrator).transferOwnership(dep.strategist);
-        ITransferOwnership(dep.performanceLedger).transferOwnership(dep.strategist);
-
-        // Fund agent pipeline
-        if (msg.value > 0) {
-            _distributeFunds(msg.value, dep.orchestrator, dep.epochCron);
-        }
-
-        // Register
-        vaultId = deployments.length;
-        deployments.push(dep);
-        vaultIndex[dep.vault] = vaultId;
-        strategistVaults[dep.strategist].push(dep.vault);
-
-        emit VaultDeployed(
-            vaultId, dep.vault, dep.strategist, dep.orchestrator,
-            dep.mirrorReactor, dep.stopReactor, dep.drawdownGuard, dep.epochCron
-        );
+        return _deployNativeVault(strategyPrompt, performanceFeeBps, maxDrawdownBps, signalPricePerSignal, instrument);
     }
 
-    /// @notice Deploy a vault whose signals come from an external agent / SDK.
-    ///         The caller is registered as the first publisher. No agent pipeline funding.
+    function deployAgentVault(
+        string calldata description,
+        uint16 performanceFeeBps,
+        uint256 maxDrawdownBps,
+        uint256 signalPricePerSignal,
+        IStrategyVault.InstrumentType instrument
+    ) external returns (uint256 vaultId) {
+        return _deployAgentVault(description, performanceFeeBps, maxDrawdownBps, signalPricePerSignal, instrument);
+    }
+
+    /// @dev Backward-compatible alias (defaults to BINARY).
     function deployCustomAgentVault(
         string calldata description,
         uint16 performanceFeeBps,
         uint256 maxDrawdownBps,
         uint256 signalPricePerSignal
     ) external returns (uint256 vaultId) {
+        return _deployAgentVault(
+            description, performanceFeeBps, maxDrawdownBps, signalPricePerSignal, IStrategyVault.InstrumentType.BINARY
+        );
+    }
+
+    function deployWalletVault(
+        address sourceWallet,
+        string calldata description,
+        uint16 performanceFeeBps,
+        uint256 maxDrawdownBps,
+        uint256 signalPricePerSignal,
+        IStrategyVault.InstrumentType instrument
+    ) external returns (uint256 vaultId) {
+        require(sourceWallet != address(0), "zero wallet");
+        require(relayer != address(0), "relayer unset");
         require(implPublisher != address(0), "publisher impl unset");
 
         VaultDeployment memory dep;
@@ -233,15 +214,150 @@ contract VaultFactory {
 
         IInitPublisher(dep.orchestrator).initialize(dep.vault, address(this));
         IInitVault(dep.vault).initialize(
-            address(this), dep.strategist, description, performanceFeeBps, dep.orchestrator,
-            paymentToken, signalPricePerSignal
+            address(this),
+            dep.strategist,
+            description,
+            performanceFeeBps,
+            dep.orchestrator,
+            TESTNET_COLLATERAL,
+            signalPricePerSignal,
+            IStrategyVault.SourceType.WALLET,
+            instrument,
+            sourceWallet,
+            relayer
         );
 
-        _deploySupport(dep, performanceFeeBps, maxDrawdownBps);
+        _deploySupport(dep, performanceFeeBps, maxDrawdownBps, instrument);
+        IInitVault(dep.vault).setEventRouter(dep.eventRouter);
 
-        IInitVault(dep.vault).setReactors(dep.mirrorReactor, dep.stopReactor, dep.drawdownGuard);
+        IInitVault(dep.vault).setReactors(dep.mirrorReactor, address(0), dep.drawdownGuard);
         IInitVault(dep.vault).setPerformanceLedger(dep.performanceLedger);
-        IInitMirror(dep.mirrorReactor).setPerformanceLedger(dep.performanceLedger);
+        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.orchestrator);
+        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.mirrorReactor);
+
+        IInitPublisher(dep.orchestrator).addPublisher(relayer);
+
+        ITransferOwnership(dep.vault).transferOwnership(dep.strategist);
+        ITransferOwnership(dep.orchestrator).transferOwnership(dep.strategist);
+        ITransferOwnership(dep.performanceLedger).transferOwnership(dep.strategist);
+
+        vaultId = deployments.length;
+        deployments.push(dep);
+        vaultIndex[dep.vault] = vaultId;
+        strategistVaults[dep.strategist].push(dep.vault);
+
+        emit VaultDeployed(
+            vaultId,
+            dep.vault,
+            dep.strategist,
+            dep.orchestrator,
+            dep.mirrorReactor,
+            dep.eventRouter,
+            IStrategyVault.SourceType.WALLET,
+            instrument
+        );
+    }
+
+    function _deployNativeVault(
+        string calldata strategyPrompt,
+        uint16 performanceFeeBps,
+        uint256 maxDrawdownBps,
+        uint256 signalPricePerSignal,
+        IStrategyVault.InstrumentType instrument
+    ) internal returns (uint256 vaultId) {
+        VaultDeployment memory dep;
+        dep.strategist = msg.sender;
+        dep.deployedAt = block.timestamp;
+
+        dep.orchestrator = implOrchestrator.clone();
+        dep.vault = implVault.clone();
+
+        IInitOrchestrator(dep.orchestrator).initialize(
+            AGENT_PLATFORM, dep.vault, address(this), strategyPrompt
+        );
+        IInitVault(dep.vault).initialize(
+            address(this),
+            dep.strategist,
+            strategyPrompt,
+            performanceFeeBps,
+            dep.orchestrator,
+            TESTNET_COLLATERAL,
+            signalPricePerSignal,
+            IStrategyVault.SourceType.AGENT,
+            instrument,
+            address(0),
+            address(0)
+        );
+
+        _deploySupport(dep, performanceFeeBps, maxDrawdownBps, instrument);
+        IInitVault(dep.vault).setEventRouter(dep.eventRouter);
+
+        IInitVault(dep.vault).setReactors(dep.mirrorReactor, address(0), dep.drawdownGuard);
+        IInitVault(dep.vault).setPerformanceLedger(dep.performanceLedger);
+        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.orchestrator);
+        IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.mirrorReactor);
+
+        ITransferOwnership(dep.vault).transferOwnership(dep.strategist);
+        ITransferOwnership(dep.orchestrator).transferOwnership(dep.strategist);
+        ITransferOwnership(dep.performanceLedger).transferOwnership(dep.strategist);
+
+        if (msg.value > 0) {
+            _distributeFunds(msg.value, dep.orchestrator, dep.epochCron);
+        }
+
+        vaultId = deployments.length;
+        deployments.push(dep);
+        vaultIndex[dep.vault] = vaultId;
+        strategistVaults[dep.strategist].push(dep.vault);
+
+        emit VaultDeployed(
+            vaultId,
+            dep.vault,
+            dep.strategist,
+            dep.orchestrator,
+            dep.mirrorReactor,
+            dep.eventRouter,
+            IStrategyVault.SourceType.AGENT,
+            instrument
+        );
+    }
+
+    function _deployAgentVault(
+        string calldata description,
+        uint16 performanceFeeBps,
+        uint256 maxDrawdownBps,
+        uint256 signalPricePerSignal,
+        IStrategyVault.InstrumentType instrument
+    ) internal returns (uint256 vaultId) {
+        require(implPublisher != address(0), "publisher impl unset");
+
+        VaultDeployment memory dep;
+        dep.strategist = msg.sender;
+        dep.deployedAt = block.timestamp;
+
+        dep.orchestrator = implPublisher.clone();
+        dep.vault = implVault.clone();
+
+        IInitPublisher(dep.orchestrator).initialize(dep.vault, address(this));
+        IInitVault(dep.vault).initialize(
+            address(this),
+            dep.strategist,
+            description,
+            performanceFeeBps,
+            dep.orchestrator,
+            TESTNET_COLLATERAL,
+            signalPricePerSignal,
+            IStrategyVault.SourceType.AGENT,
+            instrument,
+            address(0),
+            address(0)
+        );
+
+        _deploySupport(dep, performanceFeeBps, maxDrawdownBps, instrument);
+        IInitVault(dep.vault).setEventRouter(dep.eventRouter);
+
+        IInitVault(dep.vault).setReactors(dep.mirrorReactor, address(0), dep.drawdownGuard);
+        IInitVault(dep.vault).setPerformanceLedger(dep.performanceLedger);
         IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.orchestrator);
         IInitLedger(dep.performanceLedger).addAuthorizedCaller(dep.mirrorReactor);
 
@@ -257,22 +373,31 @@ contract VaultFactory {
         strategistVaults[dep.strategist].push(dep.vault);
 
         emit VaultDeployed(
-            vaultId, dep.vault, dep.strategist, dep.orchestrator,
-            dep.mirrorReactor, dep.stopReactor, dep.drawdownGuard, dep.epochCron
+            vaultId,
+            dep.vault,
+            dep.strategist,
+            dep.orchestrator,
+            dep.mirrorReactor,
+            dep.eventRouter,
+            IStrategyVault.SourceType.AGENT,
+            instrument
         );
     }
 
     function _deploySupport(
         VaultDeployment memory dep,
         uint16 performanceFeeBps,
-        uint256 maxDrawdownBps
+        uint256 maxDrawdownBps,
+        IStrategyVault.InstrumentType instrument
     ) internal {
+        dep.instrumentType = instrument;
         dep.mirrorReactor = implMirrorReactor.clone();
-        address dexAdapter = address(new DreamDexAdapter(DREAMDEX_WETH_POOL, dep.mirrorReactor));
-        IInitMirror(dep.mirrorReactor).initialize(dep.strategist, dep.vault, dexAdapter);
-
-        dep.stopReactor = implStopReactor.clone();
-        IInitStop(dep.stopReactor).initialize(dep.strategist, dep.vault, dexAdapter);
+        if (instrument == IStrategyVault.InstrumentType.PERP) {
+            dep.eventRouter = address(new PerpRouter(dep.mirrorReactor, TESTNET_MARGIN_BANK));
+        } else {
+            dep.eventRouter = address(new EventContractsRouter(dep.mirrorReactor, TESTNET_COLLATERAL));
+        }
+        IInitMirror(dep.mirrorReactor).initialize(dep.strategist, dep.vault, dep.eventRouter);
 
         dep.performanceLedger = implPerformanceLedger.clone();
         IInitLedger(dep.performanceLedger).initialize(address(this), dep.vault, ETH_USD_ORACLE);
@@ -285,6 +410,8 @@ contract VaultFactory {
 
         dep.epochCron = implEpochCron.clone();
         IInitEpoch(dep.epochCron).initialize(dep.strategist, dep.orchestrator);
+
+        dep.stopReactor = address(0);
     }
 
     function _distributeFunds(uint256 total, address orch, address cron) internal {
@@ -293,8 +420,6 @@ contract VaultFactory {
         payable(orch).transfer(orchShare);
         payable(cron).transfer(cronShare);
     }
-
-    // ── View functions ──────────────────────────────────────────────────
 
     function getDeployment(uint256 vaultId) external view returns (VaultDeployment memory) {
         return deployments[vaultId];
