@@ -1,5 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { TUSDC_DECIMALS } from '@/lib/constants'
+import { decodeLimitPrice } from '@/lib/markets-client'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -45,9 +47,27 @@ export function formatFundingChange(raw: number | bigint): string {
   return `${sign}${pct.toFixed(2)}%`
 }
 
-export function directionLabel(direction: number): 'LONG' | 'SHORT' | 'FLAT' {
-  if (direction === 1) return 'LONG'
-  if (direction === -1 || direction === 2) return 'SHORT'
+/** Event-contract limit price (Up probability) scaled by collateral decimals → display %. */
+export function formatLimitPrice(
+  scaled: number | bigint | string,
+  collateralDecimals = TUSDC_DECIMALS,
+): string {
+  const raw = typeof scaled === 'bigint' ? scaled : typeof scaled === 'string' ? BigInt(scaled || '0') : BigInt(Math.round(scaled))
+  if (raw <= BigInt(0)) return '—'
+  const prob = decodeLimitPrice(raw, collateralDecimals)
+  return `${(prob * 100).toFixed(1)}%`
+}
+
+export function formatMarketId(marketId: string): string {
+  if (!marketId || marketId === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+    return '—'
+  }
+  return truncateAddress(marketId)
+}
+
+export function directionLabel(direction: number): 'UP' | 'DOWN' | 'FLAT' {
+  if (direction === 1) return 'UP'
+  if (direction === -1 || direction === 2) return 'DOWN'
   return 'FLAT'
 }
 

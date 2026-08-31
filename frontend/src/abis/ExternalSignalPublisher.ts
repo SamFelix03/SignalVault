@@ -12,7 +12,8 @@ export const ExternalSignalPublisherABI = [
     inputs: [
       { name: 'direction', type: 'int8' },
       { name: 'sizeBps', type: 'uint16' },
-      { name: 'stopPrice', type: 'uint256' },
+      { name: 'marketId', type: 'bytes32' },
+      { name: 'limitPrice', type: 'uint256' },
       { name: 'reason', type: 'string' },
     ],
     outputs: [],
@@ -59,7 +60,8 @@ export const ExternalSignalPublisherABI = [
     inputs: [
       { name: 'direction', type: 'int8', indexed: false },
       { name: 'sizeBps', type: 'uint16', indexed: false },
-      { name: 'stopPrice', type: 'uint256', indexed: false },
+      { name: 'marketId', type: 'bytes32', indexed: false },
+      { name: 'limitPrice', type: 'uint256', indexed: false },
       { name: 'reasoningHash', type: 'bytes32', indexed: false },
     ],
   },

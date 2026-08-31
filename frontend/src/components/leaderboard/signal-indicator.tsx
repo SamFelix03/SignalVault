@@ -15,8 +15,8 @@ export function SignalIndicator({ direction, size = 'md', showLabel = true, puls
   const label = directionLabel(direction)
 
   const variantMap = {
-    LONG: 'bg-success/10 text-success border-success/30 hover:bg-success/10',
-    SHORT: 'bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/10',
+    UP: 'bg-success/10 text-success border-success/30 hover:bg-success/10',
+    DOWN: 'bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/10',
     FLAT: 'bg-warning/10 text-warning border-warning/30 hover:bg-warning/10',
   }
 
@@ -28,7 +28,7 @@ export function SignalIndicator({ direction, size = 'md', showLabel = true, puls
 
   const iconSize = { sm: 'h-3 w-3', md: 'h-4 w-4', lg: 'h-5 w-5' }
 
-  const Icon = label === 'LONG' ? ArrowUp : label === 'SHORT' ? ArrowDown : Minus
+  const Icon = label === 'UP' ? ArrowUp : label === 'DOWN' ? ArrowDown : Minus
 
   return (
     <Badge

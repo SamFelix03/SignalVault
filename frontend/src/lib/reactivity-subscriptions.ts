@@ -7,16 +7,24 @@ import {
   toBytes,
 } from 'viem'
 import { REACTIVITY_PRECOMPILE } from '@/lib/constants'
+import type { VaultSourceType } from '@/types/vault'
 
 const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000' as Hex
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as Address
 
 export const REACTIVITY_TOPICS = {
-  SignalUpdated: keccak256(toBytes('SignalUpdated(bytes32,int8,uint16,uint256,string,bytes32)')),
+  SignalUpdated: keccak256(
+    toBytes('SignalUpdated(bytes32,int8,uint16,bytes32,uint256,string,bytes32)'),
+  ),
   TradeSettled: keccak256(toBytes('TradeSettled(uint256,int8,int256,uint256,uint256)')),
   DrawdownUpdated: keccak256(toBytes('DrawdownUpdated(address,uint256,uint256)')),
   EpochTick: keccak256(toBytes('EpochTick(uint64,uint64)')),
 } as const
+
+/** Default Somnia reactivity handler gas (non-mirror subscriptions). */
+export const DEFAULT_HANDLER_GAS_LIMIT = 10_000_000
+/** Perp mirror subscriptions — PerpRouter v3 needs ~22M gas per callback. */
+export const MIRROR_HANDLER_GAS_LIMIT = 30_000_000
 
 const ON_EVENT_SELECTOR = keccak256(toBytes('onEvent(address,bytes32[],bytes)')).slice(0, 10) as Hex
 
@@ -48,24 +56,22 @@ export interface SubscriptionTarget {
   emitter: Address
 }
 
-export function buildVaultSubscriptionTargets(deployment: {
-  vault: Address
-  mirrorReactor: Address
-  stopReactor: Address
-  drawdownGuard: Address
-  epochCron: Address
-  performanceLedger: Address
-}): SubscriptionTarget[] {
-  return [
+export function buildVaultSubscriptionTargets(
+  deployment: {
+    vault: Address
+    mirrorReactor: Address
+    stopReactor: Address
+    drawdownGuard: Address
+    epochCron: Address
+    performanceLedger: Address
+  },
+  opts?: { sourceType?: VaultSourceType },
+): SubscriptionTarget[] {
+  const sourceType = opts?.sourceType ?? 'agent'
+  const targets: SubscriptionTarget[] = [
     {
       name: 'MirrorReactor',
       handler: deployment.mirrorReactor,
-      topic0: REACTIVITY_TOPICS.SignalUpdated,
-      emitter: deployment.vault,
-    },
-    {
-      name: 'StopReactor',
-      handler: deployment.stopReactor,
       topic0: REACTIVITY_TOPICS.SignalUpdated,
       emitter: deployment.vault,
     },
@@ -75,16 +81,25 @@ export function buildVaultSubscriptionTargets(deployment: {
       topic0: REACTIVITY_TOPICS.DrawdownUpdated,
       emitter: deployment.performanceLedger,
     },
-    {
+  ]
+
+  // Event-contract vaults skip StopReactor; wallet vaults also skip EpochCron.
+  if (sourceType === 'agent' && deployment.epochCron !== ZERO_ADDR) {
+    targets.push({
       name: 'EpochCron',
       handler: deployment.epochCron,
       topic0: REACTIVITY_TOPICS.EpochTick,
       emitter: REACTIVITY_PRECOMPILE,
-    },
-  ]
+    })
+  }
+
+  return targets
 }
 
-export function encodeReactivitySubscriptionCalldata(params: SubscriptionTarget): Hex {
+export function encodeReactivitySubscriptionCalldata(
+  params: SubscriptionTarget,
+  gasLimit = params.name === 'MirrorReactor' ? MIRROR_HANDLER_GAS_LIMIT : DEFAULT_HANDLER_GAS_LIMIT,
+): Hex {
   const structValue = {
     eventTopics: [params.topic0, ZERO_BYTES32, ZERO_BYTES32, ZERO_BYTES32] as const,
     origin: ZERO_ADDR,
@@ -94,7 +109,7 @@ export function encodeReactivitySubscriptionCalldata(params: SubscriptionTarget)
     handlerFunctionSelector: ON_EVENT_SELECTOR,
     priorityFeePerGas: BigInt(0),
     maxFeePerGas: BigInt(20_000_000_000),
-    gasLimit: BigInt(10_000_000),
+    gasLimit: BigInt(gasLimit),
     isGuaranteed: false,
     isCoalesced: false,
   }

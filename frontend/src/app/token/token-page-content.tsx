@@ -1,35 +1,28 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
-import { parseEther, formatEther, type Address } from 'viem'
+import { useAccount, useReadContract } from 'wagmi'
+import { formatUnits, type Address } from 'viem'
 import { Coins, Wallet, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
-import { paymentTokenConfig } from '@/lib/contracts'
-import { PAYMENT_TOKEN_ADDRESS } from '@/lib/constants'
+import { tusdcConfig } from '@/lib/contracts'
+import { TESTNET_TUSDC, TUSDC_DECIMALS } from '@/lib/constants'
+import { STT_FAUCET_URL } from '@/lib/tusdc-faucet'
 import { StrategyVaultABI } from '@/abis/StrategyVault'
+import { TusdcFaucetButton } from '@/components/token/tusdc-faucet-button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { TxStatus } from '@/components/common/tx-status'
-import { useState } from 'react'
-
-const DEFAULT_MINT_AMOUNT = '1000'
 
 export function TokenPageContent() {
   const { address, isConnected } = useAccount()
   const searchParams = useSearchParams()
   const vaultParam = searchParams.get('vault') as Address | null
-  const [mintAmount, setMintAmount] = useState(DEFAULT_MINT_AMOUNT)
-
-  const token = paymentTokenConfig
 
   const { data: balance, refetch: refetchBalance } = useReadContract({
-    ...token!,
+    ...tusdcConfig,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(token && address) },
+    query: { enabled: Boolean(address) },
   })
 
   const { data: signalPrice } = useReadContract({
@@ -39,55 +32,12 @@ export function TokenPageContent() {
     query: { enabled: Boolean(vaultParam) },
   })
 
-  const { data: allowance, refetch: refetchAllowance } = useReadContract({
-    ...token!,
-    functionName: 'allowance',
-    args: address && vaultParam ? [address, vaultParam] : undefined,
-    query: { enabled: Boolean(token && address && vaultParam) },
-  })
-
-  const { writeContract, data: txHash, isPending, error: writeError, reset } = useWriteContract()
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
-
-  const txState = isPending ? 'pending' : isConfirming ? 'confirming' : isSuccess ? 'success' : writeError ? 'error' : 'idle'
-
-  function handleMint() {
-    if (!token) return
-    writeContract({
-      ...token,
-      functionName: 'mint',
-      args: [parseEther(mintAmount || '0')],
-    })
-  }
-
-  function handleCloseTx() {
-    reset()
-    if (isSuccess) {
-      void refetchBalance()
-      void refetchAllowance()
-    }
-  }
-
-  if (!PAYMENT_TOKEN_ADDRESS || !token) {
-    return (
-      <div className="mx-auto max-w-lg space-y-4">
-        <h1 className="text-2xl font-semibold">Payment Token</h1>
-        <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            Set <code className="text-foreground">NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS</code> in frontend/.env
-            after deploying SignalPayToken.
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Get SVT</h1>
+        <h1 className="text-2xl font-semibold text-foreground">Fund tUSDC</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Mint SignalVault Pay (SVT) to your wallet. Use it to pay vault owners per signal when you subscribe.
+          SignalVault uses Somnia testnet tUSDC for signal fees and Event Contract mirror trades on Dreamdex.
         </p>
       </div>
 
@@ -95,75 +45,65 @@ export function TokenPageContent() {
         <Card>
           <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
             <Wallet className="h-10 w-10 text-muted-foreground" />
-            <p className="text-muted-foreground">Connect your wallet to mint SVT</p>
+            <p className="text-muted-foreground">Connect your wallet to check balance and mint tUSDC</p>
           </CardContent>
         </Card>
       ) : (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Coins className="h-4 w-4 text-accent" />
-                Your balance
-              </CardTitle>
-              <CardDescription>
-                Token: <span className="font-mono text-foreground">{PAYMENT_TOKEN_ADDRESS}</span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-3xl font-semibold font-mono text-foreground">
-                {balance !== undefined ? formatEther(balance) : '—'}{' '}
-                <span className="text-lg text-muted-foreground">SVT</span>
-              </p>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Coins className="h-4 w-4 text-accent" />
+              Your balance
+            </CardTitle>
+            <CardDescription>
+              tUSDC: <span className="font-mono text-foreground">{TESTNET_TUSDC}</span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-3xl font-semibold font-mono text-foreground">
+              {balance !== undefined ? formatUnits(balance, TUSDC_DECIMALS) : '—'}{' '}
+              <span className="text-lg text-muted-foreground">tUSDC</span>
+            </p>
 
-              {vaultParam && signalPrice !== undefined && (
-                <div className="rounded-lg border border-border/60 bg-secondary/20 p-3 text-sm">
-                  <p className="text-muted-foreground">
-                    Vault signal price:{' '}
-                    <span className="font-medium text-foreground">
-                      {signalPrice === BigInt(0) ? 'Free' : `${formatEther(signalPrice)} SVT / signal`}
-                    </span>
-                  </p>
-                  {allowance !== undefined && signalPrice > BigInt(0) && (
-                    <p className="mt-1 text-muted-foreground">
-                      Allowance to vault:{' '}
-                      <span className="font-mono text-foreground">{formatEther(allowance)} SVT</span>
-                    </p>
-                  )}
-                  <Link
-                    href={`/vault/${vaultParam}`}
-                    className="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline"
-                  >
-                    Back to vault
-                    <ExternalLink className="h-3 w-3" />
-                  </Link>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="mintAmount">Mint amount (SVT)</Label>
-                <Input
-                  id="mintAmount"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={mintAmount}
-                  onChange={e => setMintAmount(e.target.value)}
-                  className="font-mono"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Max 10,000 SVT per mint. 1 hour cooldown between mints.
+            {vaultParam && signalPrice !== undefined && (
+              <div className="rounded-lg border border-border/60 bg-secondary/20 p-3 text-sm">
+                <p className="text-muted-foreground">
+                  Vault signal price:{' '}
+                  <span className="font-medium text-foreground">
+                    {signalPrice === BigInt(0)
+                      ? 'Free'
+                      : `${formatUnits(signalPrice, TUSDC_DECIMALS)} tUSDC / signal`}
+                  </span>
                 </p>
+                <Link
+                  href={`/vault/${vaultParam}`}
+                  className="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                >
+                  Back to vault
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
               </div>
+            )}
 
-              <Button onClick={handleMint} disabled={isPending || isConfirming} className="w-full">
-                Mint SVT
+            <div className="rounded-lg border border-border/60 bg-secondary/20 p-4 space-y-3">
+              <p className="text-sm font-medium text-foreground">Get testnet tUSDC</p>
+              <TusdcFaucetButton onSuccess={() => void refetchBalance()} />
+            </div>
+
+            <div className="rounded-lg border border-border/60 bg-secondary/20 p-4 space-y-2 text-sm">
+              <p className="font-medium text-foreground">Need gas (STT)?</p>
+              <p className="text-xs text-muted-foreground">
+                Transactions on Somnia testnet require STT for gas fees.
+              </p>
+              <Button variant="secondary" className="w-full" asChild>
+                <a href={STT_FAUCET_URL} target="_blank" rel="noopener noreferrer">
+                  Open Somnia testnet faucet
+                  <ExternalLink className="ml-2 h-3.5 w-3.5" />
+                </a>
               </Button>
-            </CardContent>
-          </Card>
-
-          <TxStatus state={txState} hash={txHash} onClose={handleCloseTx} />
-        </>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )

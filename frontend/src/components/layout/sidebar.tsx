@@ -24,7 +24,7 @@ const navItems = [
   { href: '/', label: 'Leaderboard', icon: BarChart3, exact: true },
   { href: '/deploy', label: 'Deploy Vault', icon: Rocket, exact: false },
   { href: '/follow', label: 'Follow Dashboard', icon: LayoutDashboard, exact: false },
-  { href: '/token', label: 'Get SVT', icon: Coins, exact: false },
+  { href: '/token', label: 'Fund tUSDC', icon: Coins, exact: false },
   { href: '/composability', label: 'Composability', icon: Activity, exact: false },
 ]
 

@@ -1,13 +1,10 @@
 import type { AgentReceipt, PipelineRun } from '@/types/pipeline'
 import { StageType } from '@/types/pipeline'
 import type { Signal, VaultInfo, VaultStats, TradeRecord } from '@/types/vault'
+import { encodeLimitPrice } from '@/lib/markets-client'
 
 const now = Math.floor(Date.now() / 1000)
 const hour = 3600
-
-function usd(n: number): bigint {
-  return BigInt(Math.round(n * 1e18))
-}
 
 export const MOCK_VAULT_ADDRESSES = [
   '0x0000000000000000000000000000000000000001',
@@ -18,10 +15,17 @@ export const MOCK_VAULT_ADDRESSES = [
 export const MOCK_RECEIPT_HASH =
   '0xabc123def456abc123def456abc123def456abc123def456abc123def456abcd'
 
+const MOCK_MARKET_ID =
+  '0x00000000000000000000000000000000000000000000000000000000000000ab' as const
+
+function usd(n: number): bigint {
+  return BigInt(Math.round(n * 1e18))
+}
+
 function makeSignal(
   direction: number,
   sizeBps: number,
-  stopUsd: number,
+  limitProb: number,
   epoch: number,
   reasoning: string,
   reasoningHash: string,
@@ -30,7 +34,8 @@ function makeSignal(
   return {
     direction,
     sizeBps,
-    stopPrice: usd(stopUsd),
+    marketId: MOCK_MARKET_ID,
+    limitPrice: encodeLimitPrice(limitProb, 6),
     reasoningHash,
     epoch,
     timestamp,
@@ -58,7 +63,7 @@ export const mockVaults: VaultInfo[] = [
     currentSignal: makeSignal(
       1,
       2500,
-      3180,
+      0.52,
       142,
       'Elevated funding but extreme fear (28) — maintain reduced long, tighten stop.',
       MOCK_RECEIPT_HASH,
@@ -84,7 +89,7 @@ export const mockVaults: VaultInfo[] = [
     currentSignal: makeSignal(
       2,
       1800,
-      3450,
+      0.38,
       141,
       'Hawkish macro headlines + crowded longs — rotate to short 18%.',
       '0xdef789abc123def789abc123def789abc123def789abc123def789abc123def7',
