@@ -1,14 +1,17 @@
 {
   "name": "signalvault-rsi-agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js --instrument binary",
+    "start:binary": "node index.js --instrument binary",
+    "start:perp": "node index.js --instrument perp"
   },
   "dependencies": {
+    "@somnia-chain/markets-sdk": "^0.28.0",
     "dotenv": "^17.4.2",
-    "signalvault-sdk": "^0.1.0",
+    "signalvault-sdk": "^0.3.0",
     "viem": "~2.37.8"
   }
 }

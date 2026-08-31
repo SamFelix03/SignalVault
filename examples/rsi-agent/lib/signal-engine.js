@@ -2,18 +2,17 @@
  * Rule-based inference — ports AgentOrchestrator._deriveRuleBasedSignal (fallback path).
  */
 import { formatUsdCents } from './pipeline-context.js'
-import { deriveStopPriceCents } from './stop-price.js'
 
-function dirLabel(d) {
-  if (d > 0) return 'LONG'
-  if (d < 0) return 'SHORT'
+function dirLabel(d, instrument = 'binary') {
+  if (d > 0) return instrument === 'perp' ? 'LONG' : 'UP'
+  if (d < 0) return instrument === 'perp' ? 'SHORT' : 'DOWN'
   return 'FLAT'
 }
 
 /**
  * Same logic as contracts/src/core/AgentOrchestrator.sol _deriveRuleBasedSignal
  */
-export function deriveRuleBasedSignal(ctx) {
+export function deriveRuleBasedSignal(ctx, { instrument = 'binary' } = {}) {
   let direction = 1
   let sizeBps = 1000
 
@@ -35,7 +34,6 @@ export function deriveRuleBasedSignal(ctx) {
   }
 
   const price = ctx.fetchedPrice
-  const stopPrice = deriveStopPriceCents(direction, price)
 
   const reasoning = [
     `ETH ${formatUsdCents(price)}`,
@@ -46,17 +44,24 @@ export function deriveRuleBasedSignal(ctx) {
   const decisionNote =
     direction > 0
       ? ctx.fearGreedIndex < 30
-        ? 'Extreme fear — accumulate long'
-        : 'Neutral-bullish macro — maintain long exposure'
+        ? instrument === 'perp'
+          ? 'Extreme fear — accumulate LONG'
+          : 'Extreme fear — accumulate UP'
+        : instrument === 'perp'
+          ? 'Neutral-bullish macro — maintain LONG exposure'
+          : 'Neutral-bullish macro — maintain UP exposure'
       : ctx.fearGreedIndex > 70
-        ? 'Extreme greed — reduce risk, short bias'
-        : 'Elevated funding — short bias'
+        ? instrument === 'perp'
+          ? 'Extreme greed — reduce risk, SHORT bias'
+          : 'Extreme greed — reduce risk, DOWN bias'
+        : instrument === 'perp'
+          ? 'Elevated funding — SHORT bias'
+          : 'Elevated funding — DOWN bias'
 
   return {
-    direction: dirLabel(direction),
+    direction: dirLabel(direction, instrument),
     directionNum: direction,
     sizeBps,
-    stopPrice: BigInt(stopPrice),
     reason: `${reasoning}. ${decisionNote}.`,
     inferenceMode: 'rules',
   }

@@ -4,20 +4,35 @@
  */
 import { deriveRuleBasedSignal } from './signal-engine.js'
 import { formatUsdCents } from './pipeline-context.js'
-import { deriveStopPriceCents, normalizeStopPriceCents } from './stop-price.js'
 
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1'
 const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant'
 
-function dirLabel(d) {
-  if (d === 1 || d === '1' || d === 'LONG') return 'LONG'
-  if (d === -1 || d === '-1' || d === 'SHORT') return 'SHORT'
+function dirLabel(d, instrument = 'binary') {
+  if (d === 1 || d === '1' || d === 'UP' || d === 'LONG') {
+    return instrument === 'perp' ? 'LONG' : 'UP'
+  }
+  if (d === -1 || d === '-1' || d === 'DOWN' || d === 'SHORT') {
+    return instrument === 'perp' ? 'SHORT' : 'DOWN'
+  }
   return 'FLAT'
 }
 
-function buildUserMessage(ctx, current, strategyPrompt) {
+function buildUserMessage(ctx, current, strategyPrompt, instrument = 'binary') {
   const dir =
-    current.directionNum > 0 ? 'LONG' : current.directionNum < 0 ? 'SHORT' : 'FLAT'
+    current.directionNum > 0
+      ? instrument === 'perp'
+        ? 'LONG'
+        : 'UP'
+      : current.directionNum < 0
+        ? instrument === 'perp'
+          ? 'SHORT'
+          : 'DOWN'
+        : 'FLAT'
+  const directionHelp =
+    instrument === 'perp'
+      ? 'Perpetuals: direction is LONG (bullish), SHORT (bearish), or FLAT (exit).'
+      : 'Event contracts: direction is UP (bullish), DOWN (bearish), or FLAT (exit).'
   return [
     'Current market state:',
     `- ETH/USDT spot price: ${formatUsdCents(ctx.fetchedPrice)} (${ctx.fetchedPrice} cents)`,
@@ -27,7 +42,8 @@ function buildUserMessage(ctx, current, strategyPrompt) {
     `- Current position: direction=${dir} size=${current.sizeBps}bps`,
     '',
     'Call the appropriate tool with your trading decision.',
-    `stopPrice MUST be in USD cents (e.g. ETH at $1,860 → 186000). Long stop ≈ ${deriveStopPriceCents(1, ctx.fetchedPrice)}, short stop ≈ ${deriveStopPriceCents(-1, ctx.fetchedPrice)}.`,
+    directionHelp,
+    'Limit price is chosen from the live market order book — you only decide direction and size.',
     '',
     `Strategy context: ${strategyPrompt}`,
   ].join('\n')
@@ -44,9 +60,14 @@ function getGroqConfig() {
   }
 }
 
-async function callGroq(ctx, current, strategyPrompt) {
+async function callGroq(ctx, current, strategyPrompt, instrument = 'binary') {
   const config = getGroqConfig()
   if (!config) throw new Error('GROQ_API_KEY not set')
+
+  const isPerp = instrument === 'perp'
+  const dirHelp = isPerp
+    ? 'Direction: 1=LONG, -1=SHORT, 0=FLAT. sizeBps: 0-3000.'
+    : 'Direction: 1=UP, -1=DOWN, 0=FLAT. sizeBps: 0-3000.'
 
   const body = {
     model: config.model,
@@ -56,14 +77,14 @@ async function callGroq(ctx, current, strategyPrompt) {
         content: [
           strategyPrompt,
           '',
-          'You are an autonomous trading strategy agent. Analyze the data and call the appropriate tool.',
+          `You are an autonomous ${isPerp ? 'perpetuals' : 'event-contracts'} strategy agent. Analyze the data and call the appropriate tool.`,
           'IMPORTANT: You MUST call exactly one tool. Either updateSignal or emergencyExit.',
-          'stopPrice must be USD cents (integer). Example: ETH at $1,860.00 → stopPrice 186000, not 1860.',
+          dirHelp,
         ].join('\n'),
       },
       {
         role: 'user',
-        content: buildUserMessage(ctx, current, strategyPrompt),
+        content: buildUserMessage(ctx, current, strategyPrompt, instrument),
       },
     ],
     tools: [
@@ -72,16 +93,15 @@ async function callGroq(ctx, current, strategyPrompt) {
         function: {
           name: 'updateSignal',
           description:
-            'Update the vault trading signal. direction: 1=LONG, -1=SHORT, 0=FLAT. sizeBps: 0-3000. stopPrice: cents.',
+            `Update the vault trading signal. ${isPerp ? '1=LONG, -1=SHORT' : '1=UP, -1=DOWN'}, 0=FLAT. sizeBps: 0-3000.`,
           parameters: {
             type: 'object',
             properties: {
-              direction: { type: 'integer', description: '1 LONG, -1 SHORT, 0 FLAT' },
+              direction: { type: 'integer', description: isPerp ? '1 LONG, -1 SHORT, 0 FLAT' : '1 UP, -1 DOWN, 0 FLAT' },
               sizeBps: { type: 'integer' },
-              stopPrice: { type: 'integer', description: 'stop in cents' },
               reasoning: { type: 'string', description: 'one or two sentences explaining the trade' },
             },
-            required: ['direction', 'sizeBps', 'stopPrice', 'reasoning'],
+            required: ['direction', 'sizeBps', 'reasoning'],
           },
         },
       },
@@ -132,7 +152,6 @@ async function callGroq(ctx, current, strategyPrompt) {
       direction: 'FLAT',
       directionNum: 0,
       sizeBps: 0,
-      stopPrice: BigInt(ctx.fetchedPrice),
       reason: args.reason ?? 'Emergency exit',
       inferenceMode: 'groq',
     }
@@ -140,14 +159,12 @@ async function callGroq(ctx, current, strategyPrompt) {
 
   const directionNum = Number(args.direction)
   const sizeBps = Number(args.sizeBps)
-  const stopPrice = normalizeStopPriceCents(args.stopPrice, ctx.fetchedPrice, directionNum)
   const reason = String(args.reasoning ?? args.reason ?? '')
 
   return {
-    direction: dirLabel(directionNum),
+    direction: dirLabel(directionNum, instrument),
     directionNum,
     sizeBps,
-    stopPrice,
     reason,
     inferenceMode: 'groq',
   }
@@ -156,18 +173,18 @@ async function callGroq(ctx, current, strategyPrompt) {
 /**
  * Stage 5 — infer trade (Groq LLM if configured, else native rule-based fallback).
  */
-export async function runInference(ctx, current, strategyPrompt) {
+export async function runInference(ctx, current, strategyPrompt, { instrument = 'binary' } = {}) {
   const mode = (process.env.INFERENCE_MODE ?? 'rules').toLowerCase()
 
   if (mode === 'llm' && getGroqConfig()) {
     try {
-      return await callGroq(ctx, current, strategyPrompt)
+      return await callGroq(ctx, current, strategyPrompt, instrument)
     } catch (err) {
       console.warn(`  [Pipeline] Groq inference failed (${err.message}) — falling back to rules`)
     }
   }
 
-  return deriveRuleBasedSignal(ctx)
+  return deriveRuleBasedSignal(ctx, { instrument })
 }
 
 export { DEFAULT_GROQ_MODEL, getGroqConfig }
