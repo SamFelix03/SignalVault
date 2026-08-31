@@ -1,4 +1,4 @@
-node_modules/
+sdk/.npmrc
 .env
 .env.local
 *.log

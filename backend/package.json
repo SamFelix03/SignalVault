@@ -10,7 +10,12 @@
     "register-schemas": "ts-node scripts/register-schemas.ts",
     "seed-demo": "ts-node scripts/seed-demo-data.ts",
     "test": "npx tsx --test src/services/mirror-worker.test.ts",
-    "test:mirror-e2e": "tsx src/scripts/test-follower-mirror-e2e.ts"
+    "test:mirror-e2e": "tsx src/scripts/test-follower-mirror-e2e.ts",
+    "binary-mirror": "tsx scripts/binary-mirror/run-all.ts",
+    "binary-mirror:01": "tsx scripts/binary-mirror/01-vault-wiring.ts",
+    "binary-mirror:02": "tsx scripts/binary-mirror/02-follower-prereqs.ts",
+    "binary-mirror:07": "tsx scripts/binary-mirror/07-order-book.ts",
+    "binary-mirror:09": "tsx scripts/binary-mirror/09-simulate-router.ts"
   },
   "keywords": [
     "somnia",
@@ -22,6 +27,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@somnia-chain/markets-sdk": "^0.28.0",
     "@somnia-chain/reactivity": "0.1.10",
     "@somnia-chain/streams": "^0.12.2",
     "@supabase/supabase-js": "^2.109.0",
