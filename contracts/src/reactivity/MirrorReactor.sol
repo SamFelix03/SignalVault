@@ -4,56 +4,27 @@ pragma solidity 0.8.30;
 import {SomniaEventHandler} from "@somnia-chain/reactivity-contracts/contracts/SomniaEventHandler.sol";
 import {SomniaExtensions} from "@somnia-chain/reactivity-contracts/contracts/interfaces/SomniaExtensions.sol";
 import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
-import {IDreamDEX} from "../interfaces/IDreamDEX.sol";
-
-interface IPerformanceLedger {
-    function openFollowerPosition(
-        address follower,
-        int8 direction,
-        uint256 entryPrice,
-        uint256 size,
-        bytes32 signalHash
-    ) external;
-
-    function recordFollowerTrade(
-        address follower,
-        int8 direction,
-        uint256 entryPrice,
-        uint256 exitPrice,
-        uint256 size,
-        bytes32 signalHash
-    ) external;
-}
-
-interface IDreamDexPricing {
-    function getMarkPrice() external view returns (uint256);
-    function lastExecutionPrice() external view returns (uint256);
-}
+import {IExecutionRouter} from "../interfaces/IExecutionRouter.sol";
 
 contract MirrorReactor is SomniaEventHandler {
     address public owner;
     address public vault;
-    IDreamDEX public dex;
-    address public performanceLedger;
+    IExecutionRouter public router;
     bool private _initialized;
 
-    bytes32 public constant SIGNAL_UPDATED_TOPIC = keccak256("SignalUpdated(bytes32,int8,uint16,uint256,string,bytes32)");
+    bytes32 public constant SIGNAL_UPDATED_TOPIC =
+        keccak256("SignalUpdated(bytes32,int8,uint16,bytes32,uint256,string,bytes32)");
+
+    /// @dev PerpRouter v3 mirror path needs ~22M gas (wallet deploy + slippage retries).
+    uint64 internal constant MIRROR_HANDLER_GAS_LIMIT = 30_000_000;
 
     uint256 public subscriptionId;
     uint256 public totalMirrored;
 
-    struct FollowerOpenLeg {
-        int8 direction;
-        uint256 entryPrice;
-        uint256 size;
-        bytes32 positionId;
-    }
-
-    mapping(address => FollowerOpenLeg) public followerOpenLegs;
-
-    event MirrorExecuted(address indexed follower, int8 direction, uint256 size, bytes32 positionId, uint256 price);
+    event MirrorExecuted(
+        address indexed follower, int8 direction, uint256 collateral, bytes32 fillId, bytes32 marketId
+    );
     event MirrorFailed(address indexed follower, string reason);
-    event MirrorSettled(address indexed follower, int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size);
     event SubscriptionRegistered(uint256 subscriptionId);
 
     modifier onlyOwner() {
@@ -63,17 +34,12 @@ contract MirrorReactor is SomniaEventHandler {
 
     constructor() {}
 
-    function initialize(address _owner, address _vault, address _dex) external {
+    function initialize(address _owner, address _vault, address _router) external {
         require(!_initialized, "already initialized");
         _initialized = true;
         owner = _owner;
         vault = _vault;
-        dex = IDreamDEX(_dex);
-    }
-
-    function setPerformanceLedger(address _ledger) external {
-        require(msg.sender == owner || performanceLedger == address(0), "not authorized");
-        performanceLedger = _ledger;
+        router = IExecutionRouter(_router);
     }
 
     function registerSubscription() external onlyOwner {
@@ -83,7 +49,11 @@ contract MirrorReactor is SomniaEventHandler {
             emitter: vault
         });
 
-        SomniaExtensions.SubscriptionOptions memory options = SomniaExtensions.defaultSubscriptionOptions();
+        SomniaExtensions.SubscriptionOptions memory options = SomniaExtensions.SubscriptionOptions({
+            priorityFeePerGas: SomniaExtensions.DEFAULT_PRIORITY_FEE_PER_GAS,
+            maxFeePerGas: SomniaExtensions.DEFAULT_MAX_FEE_PER_GAS,
+            gasLimit: MIRROR_HANDLER_GAS_LIMIT
+        });
         subscriptionId = SomniaExtensions.subscribe(address(this), filter, options);
         emit SubscriptionRegistered(subscriptionId);
     }
@@ -100,67 +70,48 @@ contract MirrorReactor is SomniaEventHandler {
         (
             int8 direction,
             uint16 sizeBps,
-            uint256 stopPrice,
+            bytes32 marketId,
+            uint256 limitPrice,
             string memory reasoningSummary,
             bytes32 reasoningHash
-        ) = abi.decode(data, (int8, uint16, uint256, string, bytes32));
+        ) = abi.decode(data, (int8, uint16, bytes32, uint256, string, bytes32));
         reasoningSummary;
+        reasoningHash;
 
         if (signalHash == bytes32(0)) signalHash = reasoningHash;
 
-        uint256 markPrice = IDreamDexPricing(address(dex)).getMarkPrice();
-        address[] memory followers = IStrategyVault(vault).getFollowers();
+        bool isPerp = IStrategyVault(vault).instrumentType() == IStrategyVault.InstrumentType.PERP;
+        if (direction == 0 && !isPerp) return;
 
-        for (uint256 i = 0; i < followers.length; i++) {
-            address follower = followers[i];
+        address[] memory followerAddrs = IStrategyVault(vault).getFollowers();
+
+        for (uint256 i = 0; i < followerAddrs.length; i++) {
+            address follower = followerAddrs[i];
             IStrategyVault.FollowerConfig memory config = IStrategyVault(vault).getFollowerConfig(follower);
             if (!config.active) continue;
 
-            _settleOpenLeg(follower, markPrice, signalHash);
-
-            if (direction == 0) continue;
-
-            try IStrategyVault(vault).chargeSignalFee(follower, signalHash) {
-            } catch {
-                emit MirrorFailed(follower, "signal payment failed");
-                continue;
+            if (direction != 0) {
+                try IStrategyVault(vault).chargeSignalFee(follower, signalHash) {
+                } catch {
+                    emit MirrorFailed(follower, "signal payment failed");
+                    continue;
+                }
             }
 
-            // Quote notional in USDso (18 decimals): maxPosition × signal size × risk scaling
-            uint256 quoteNotional = (config.maxPositionSize * uint256(sizeBps) * uint256(config.riskPct))
-                / (10_000 * 100);
-            if (quoteNotional == 0) continue;
+            uint256 collateral = direction == 0
+                ? 0
+                : (config.maxPositionSize * uint256(sizeBps) * uint256(config.riskPct)) / (10_000 * 10_000);
+            if (direction != 0 && collateral == 0) continue;
 
-            uint256 adjustedStop = direction > 0
-                ? (stopPrice > config.stopLossBuffer ? stopPrice - config.stopLossBuffer : 0)
-                : stopPrice + config.stopLossBuffer;
-
-            try dex.placeOrder{value: 0}(
-                follower, direction, quoteNotional, adjustedStop, config.maxSlippageBps
-            ) returns (bytes32 positionId) {
-                if (positionId == bytes32(0)) {
+            try router.placeOrder(
+                follower, marketId, direction, collateral, limitPrice, config.maxSlippageBps
+            ) returns (bytes32 fillId) {
+                if (fillId == bytes32(0)) {
                     emit MirrorFailed(follower, "order not filled");
                     continue;
                 }
-
-                uint256 fillPrice = IDreamDexPricing(address(dex)).lastExecutionPrice();
-                if (fillPrice == 0) fillPrice = markPrice;
-
-                followerOpenLegs[follower] = FollowerOpenLeg({
-                    direction: direction,
-                    entryPrice: fillPrice,
-                    size: quoteNotional,
-                    positionId: positionId
-                });
-
-                if (performanceLedger != address(0)) {
-                    IPerformanceLedger(performanceLedger).openFollowerPosition(
-                        follower, direction, fillPrice, quoteNotional, signalHash
-                    );
-                }
-
                 totalMirrored++;
-                emit MirrorExecuted(follower, direction, quoteNotional, positionId, fillPrice);
+                emit MirrorExecuted(follower, direction, collateral, fillId, marketId);
             } catch Error(string memory reason) {
                 emit MirrorFailed(follower, reason);
             } catch {
@@ -169,23 +120,9 @@ contract MirrorReactor is SomniaEventHandler {
         }
     }
 
-    function _settleOpenLeg(address follower, uint256 exitPrice, bytes32 signalHash) internal {
-        FollowerOpenLeg memory leg = followerOpenLegs[follower];
-        if (leg.size == 0) return;
-
-        if (performanceLedger != address(0)) {
-            IPerformanceLedger(performanceLedger).recordFollowerTrade(
-                follower,
-                leg.direction,
-                leg.entryPrice,
-                exitPrice > 0 ? exitPrice : leg.entryPrice,
-                leg.size,
-                signalHash
-            );
-        }
-
-        emit MirrorSettled(follower, leg.direction, leg.entryPrice, exitPrice, leg.size);
-        delete followerOpenLegs[follower];
+    function setRouter(address _router) external onlyOwner {
+        require(_router != address(0), "zero router");
+        router = IExecutionRouter(_router);
     }
 
     function unregisterSubscription() external onlyOwner {
