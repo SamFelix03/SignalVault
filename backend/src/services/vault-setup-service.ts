@@ -5,8 +5,13 @@ import {
   getAddress,
   parseEther,
 } from 'viem';
-import { publicClient, getWalletClient, config } from '../config/chains';
-import { VaultFactoryABI } from '../abis/VaultFactory';
+import { publicClient, getWalletClient, config, getKnownFactoryAddresses } from '../config/chains';
+import {
+  VaultFactoryABI,
+  LegacyVaultFactoryABI,
+  LegacyVaultDeployedEventABI,
+  VAULT_DEPLOYED_TOPICS,
+} from '../abis/VaultFactory';
 import { AgentOrchestratorABI } from '../abis/AgentOrchestrator';
 import { JSON_FETCH_COST, LLM_PARSE_COST, LLM_INFER_COST } from '../config/constants';
 import { vaultIndexer } from './vault-indexer';
@@ -32,6 +37,30 @@ import { eventBus } from './event-bus';
 import { logger } from '../utils/logger';
 
 const CTX = 'VaultSetupService';
+
+/** Indexed event topics are 32-byte words; addresses occupy the low 20 bytes. */
+function addressFromTopic(topic: Hex): Address {
+  return getAddress(`0x${topic.slice(-40)}`);
+}
+
+async function getDeployReceipt(txHash: Hex) {
+  const delaysMs = [0, 1500, 3000];
+  let lastErr: unknown;
+  for (const delayMs of delaysMs) {
+    if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+    try {
+      return await publicClient.getTransactionReceipt({ hash: txHash });
+    } catch (err) {
+      lastErr = err;
+      logger.warn(CTX, 'Receipt not available yet — retrying', {
+        txHash,
+        delayMs,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('Failed to fetch deploy receipt');
+}
 
 export interface SetupOptions {
   deployTxHash?: string;
@@ -61,72 +90,218 @@ const STEP_BY_SUB_NAME: Record<string, SetupStepId> = {
   EpochCron: 'epoch-sub',
 };
 
+type FactoryDeployment = {
+  vault: Address;
+  orchestrator: Address;
+  mirrorReactor: Address;
+  stopReactor: Address;
+  drawdownGuard: Address;
+  epochCron: Address;
+  performanceLedger: Address;
+  feeDistributor: Address;
+};
+
+async function readFactoryDeployment(
+  factoryAddress: Address,
+  vaultId: bigint,
+): Promise<FactoryDeployment> {
+  try {
+    const dep = await publicClient.readContract({
+      address: factoryAddress,
+      abi: VaultFactoryABI,
+      functionName: 'getDeployment',
+      args: [vaultId],
+    }) as FactoryDeployment & { eventRouter?: Address; strategist: Address; deployedAt: bigint };
+
+    return {
+      vault: getAddress(dep.vault),
+      orchestrator: getAddress(dep.orchestrator),
+      mirrorReactor: getAddress(dep.mirrorReactor),
+      stopReactor: getAddress(dep.stopReactor),
+      drawdownGuard: getAddress(dep.drawdownGuard),
+      epochCron: getAddress(dep.epochCron),
+      performanceLedger: getAddress(dep.performanceLedger),
+      feeDistributor: getAddress(dep.feeDistributor),
+    };
+  } catch (err) {
+    logger.warn(CTX, 'getDeployment with current ABI failed — trying legacy tuple', {
+      factory: factoryAddress,
+      vaultId: vaultId.toString(),
+      error: err instanceof Error ? err.message : String(err),
+    });
+
+    const dep = await publicClient.readContract({
+      address: factoryAddress,
+      abi: LegacyVaultFactoryABI,
+      functionName: 'getDeployment',
+      args: [vaultId],
+    }) as FactoryDeployment & { strategist: Address; deployedAt: bigint };
+
+    return {
+      vault: getAddress(dep.vault),
+      orchestrator: getAddress(dep.orchestrator),
+      mirrorReactor: getAddress(dep.mirrorReactor),
+      stopReactor: getAddress(dep.stopReactor),
+      drawdownGuard: getAddress(dep.drawdownGuard),
+      epochCron: getAddress(dep.epochCron),
+      performanceLedger: getAddress(dep.performanceLedger),
+      feeDistributor: getAddress(dep.feeDistributor),
+    };
+  }
+}
+
 export async function resolveVaultFromDeployTx(txHash: Hex): Promise<ResolvedDeployment> {
-  const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+  const knownFactories = getKnownFactoryAddresses();
+  const knownFactorySet = new Set(knownFactories.map((a) => a.toLowerCase()));
+
+  logger.info(CTX, 'Resolving deploy transaction', {
+    txHash,
+    configuredFactory: config.vaultFactoryAddress,
+    knownFactories,
+    expectedVaultDeployedTopics: [...VAULT_DEPLOYED_TOPICS],
+  });
+
+  const receipt = await getDeployReceipt(txHash);
   if (receipt.status !== 'success') {
+    logger.error(CTX, 'Deploy transaction reverted on-chain', { txHash, status: receipt.status });
     throw new Error('Deploy transaction failed on-chain');
   }
 
-  if (!config.vaultFactoryAddress) {
-    throw new Error('VAULT_FACTORY_ADDRESS not configured');
-  }
+  logger.info(CTX, 'Deploy receipt loaded', {
+    txHash,
+    blockNumber: receipt.blockNumber.toString(),
+    logCount: receipt.logs.length,
+    to: receipt.to,
+  });
+
+  const logSummary = receipt.logs.map((log, i) => ({
+    index: i,
+    address: log.address,
+    isKnownFactory: knownFactorySet.has(log.address.toLowerCase()),
+    topic0: log.topics[0] ?? null,
+    topicCount: log.topics.length,
+    dataBytes: (log.data.length - 2) / 2,
+  }));
+  logger.info(CTX, 'Receipt logs summary', { txHash, logs: logSummary });
+
+  const decodeErrors: string[] = [];
 
   for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== config.vaultFactoryAddress.toLowerCase()) continue;
-    try {
-      const decoded = decodeEventLog({
-        abi: VaultFactoryABI,
-        data: log.data,
-        topics: log.topics,
+    const isKnownFactory = knownFactorySet.has(log.address.toLowerCase());
+    const topic0 = log.topics[0];
+    const isVaultDeployedTopic =
+      topic0 !== undefined && (VAULT_DEPLOYED_TOPICS as readonly string[]).includes(topic0);
+
+    if (!isKnownFactory && !isVaultDeployedTopic) continue;
+
+    if (!isKnownFactory && isVaultDeployedTopic) {
+      logger.warn(CTX, 'VaultDeployed topic from unknown factory address', {
+        txHash,
+        logAddress: log.address,
+        topic0,
+        knownFactories,
       });
+    }
 
-      if (decoded.eventName !== 'VaultDeployed') continue;
+    const factoryAddress = getAddress(log.address);
 
-      const args = decoded.args as {
-        vaultId: bigint;
-        vault: Address;
-        strategist: Address;
-        orchestrator: Address;
-        mirrorReactor: Address;
-        stopReactor: Address;
-        drawdownGuard: Address;
-        epochCron: Address;
-      };
+    // Path A: full ABI decode (current + legacy event shapes)
+    for (const abi of [VaultFactoryABI, LegacyVaultDeployedEventABI] as const) {
+      try {
+        const decoded = decodeEventLog({
+          abi,
+          data: log.data,
+          topics: log.topics,
+        });
 
-      const dep = await publicClient.readContract({
-        address: config.vaultFactoryAddress,
-        abi: VaultFactoryABI,
-        functionName: 'getDeployment',
-        args: [args.vaultId],
-      }) as {
-        vault: Address;
-        orchestrator: Address;
-        mirrorReactor: Address;
-        stopReactor: Address;
-        drawdownGuard: Address;
-        epochCron: Address;
-        performanceLedger: Address;
-        feeDistributor: Address;
-        strategist: Address;
-      };
+        if (decoded.eventName !== 'VaultDeployed') continue;
 
-      return {
-        vaultAddress: getAddress(args.vault),
-        vaultId: args.vaultId,
-        strategist: getAddress(args.strategist),
-        orchestrator: getAddress(dep.orchestrator),
-        mirrorReactor: getAddress(dep.mirrorReactor),
-        stopReactor: getAddress(dep.stopReactor),
-        drawdownGuard: getAddress(dep.drawdownGuard),
-        epochCron: getAddress(dep.epochCron),
-        performanceLedger: getAddress(dep.performanceLedger),
-        feeDistributor: getAddress(dep.feeDistributor),
-        deployTxHash: txHash,
-      };
-    } catch {
-      // not a VaultDeployed log
+        const args = decoded.args as {
+          vaultId: bigint;
+          vault: Address;
+          strategist: Address;
+        };
+
+        logger.info(CTX, 'VaultDeployed decoded via ABI', {
+          txHash,
+          factory: factoryAddress,
+          abi: abi === VaultFactoryABI ? 'current' : 'legacy',
+          vaultId: args.vaultId.toString(),
+          vault: args.vault,
+          strategist: args.strategist,
+        });
+
+        const dep = await readFactoryDeployment(factoryAddress, args.vaultId);
+
+        return {
+          vaultAddress: getAddress(args.vault),
+          vaultId: args.vaultId,
+          strategist: getAddress(args.strategist),
+          orchestrator: dep.orchestrator,
+          mirrorReactor: dep.mirrorReactor,
+          stopReactor: dep.stopReactor,
+          drawdownGuard: dep.drawdownGuard,
+          epochCron: dep.epochCron,
+          performanceLedger: dep.performanceLedger,
+          feeDistributor: dep.feeDistributor,
+          deployTxHash: txHash,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        decodeErrors.push(
+          `factory=${factoryAddress} abi=${abi === VaultFactoryABI ? 'current' : 'legacy'}: ${msg}`,
+        );
+      }
+    }
+
+    // Path B: indexed topics only (vaultId, vault, strategist are always indexed)
+    if (isVaultDeployedTopic && log.topics.length >= 4) {
+      try {
+        const vaultId = BigInt(log.topics[1]!);
+        const vault = addressFromTopic(log.topics[2]!);
+        const strategist = addressFromTopic(log.topics[3]!);
+
+        logger.info(CTX, 'VaultDeployed parsed from indexed topics', {
+          txHash,
+          factory: factoryAddress,
+          topic0,
+          vaultId: vaultId.toString(),
+          vault,
+          strategist,
+        });
+
+        const dep = await readFactoryDeployment(factoryAddress, vaultId);
+
+        return {
+          vaultAddress: vault,
+          vaultId,
+          strategist,
+          orchestrator: dep.orchestrator,
+          mirrorReactor: dep.mirrorReactor,
+          stopReactor: dep.stopReactor,
+          drawdownGuard: dep.drawdownGuard,
+          epochCron: dep.epochCron,
+          performanceLedger: dep.performanceLedger,
+          feeDistributor: dep.feeDistributor,
+          deployTxHash: txHash,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        decodeErrors.push(`factory=${factoryAddress} indexed-topics: ${msg}`);
+      }
     }
   }
+
+  logger.error(CTX, 'VaultDeployed event not found in transaction receipt', {
+    txHash,
+    configuredFactory: config.vaultFactoryAddress,
+    knownFactories,
+    receiptTo: receipt.to,
+    logAddresses: [...new Set(receipt.logs.map((l) => l.address))],
+    decodeErrors,
+    hint:
+      'If logAddresses does not include your VAULT_FACTORY_ADDRESS, the frontend deployed to a different factory than the backend expects. Restart backend after updating backend/.env.',
+  });
 
   throw new Error('VaultDeployed event not found in transaction receipt');
 }

@@ -14,6 +14,9 @@ const CTX = 'VaultIndexer';
 
 export type PublisherKind = 'native' | 'custom';
 
+export type VaultSourceType = 'AGENT' | 'WALLET';
+export type VaultInstrumentType = 'BINARY' | 'PERP';
+
 export interface VaultInfo {
   address: Address;
   vaultId: number;
@@ -25,6 +28,10 @@ export interface VaultInfo {
   feeDistributor: Address;
   drawdownGuard: Address;
   epochCron: Address;
+  eventRouter: Address;
+  instrumentType: VaultInstrumentType;
+  sourceType: VaultSourceType;
+  sourceWallet?: Address;
   deployedAt: string;
   strategyPrompt: string;
   performanceFeeBps: number;
@@ -36,7 +43,8 @@ export interface VaultInfo {
   currentSignal?: {
     direction: number;
     sizeBps: number;
-    stopPrice: string;
+    marketId: string;
+    limitPrice: string;
     epoch: string;
     reasoningHash: string;
     reasoningSummary: string;
@@ -46,7 +54,8 @@ export interface VaultInfo {
 export interface SignalRecord {
   direction: number;
   sizeBps: number;
-  stopPrice: string;
+  marketId: string;
+  limitPrice: string;
   reasoningHash: string;
   reasoningSummary: string;
   epoch: string;
@@ -155,19 +164,40 @@ class VaultIndexer {
         vault: Address; orchestrator: Address; mirrorReactor: Address;
         stopReactor: Address; drawdownGuard: Address; epochCron: Address;
         performanceLedger: Address; feeDistributor: Address;
+        eventRouter?: Address;
         strategist: Address; deployedAt: bigint;
       };
 
       const vaultAddr = dep.vault;
 
-      const [strategist, strategyPrompt, performanceFeeBps, signalPrice, paymentToken, publisherKind] = await Promise.all([
+      const [
+        strategist, strategyPrompt, performanceFeeBps, signalPrice, paymentToken,
+        sourceTypeRaw, sourceWallet, eventRouterOnVault, instrumentTypeRaw, publisherKind,
+      ] = await Promise.all([
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'strategist' }),
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'strategyPrompt' }),
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'performanceFeeBps' }),
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'signalPrice' }).catch(() => 0n),
         publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'paymentToken' }).catch(() => '0x0000000000000000000000000000000000000000'),
+        publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'sourceType' }).catch(() => 0),
+        publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'sourceWallet' }).catch(() => '0x0000000000000000000000000000000000000000'),
+        publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'eventRouter' }).catch(() => '0x0000000000000000000000000000000000000000'),
+        publicClient.readContract({ address: vaultAddr, abi: StrategyVaultABI, functionName: 'instrumentType' }).catch(() => 0),
         this.detectPublisherKind(dep.orchestrator),
       ]);
+
+      const instrumentType: VaultInstrumentType =
+        Number(instrumentTypeRaw) === 1 || Number((dep as { instrumentType?: number }).instrumentType) === 1
+          ? 'PERP'
+          : 'BINARY';
+      const sourceType: VaultSourceType = Number(sourceTypeRaw) === 1 ? 'WALLET' : 'AGENT';
+      const zeroAddr = '0x0000000000000000000000000000000000000000';
+      const resolvedSourceWallet = String(sourceWallet).toLowerCase() !== zeroAddr
+        ? (sourceWallet as Address)
+        : undefined;
+      const eventRouter = (dep.eventRouter && dep.eventRouter !== zeroAddr
+        ? dep.eventRouter
+        : eventRouterOnVault) as Address;
 
       let followerCount = 0;
       try {
@@ -186,6 +216,10 @@ class VaultIndexer {
         feeDistributor: dep.feeDistributor,
         drawdownGuard: dep.drawdownGuard,
         epochCron: dep.epochCron,
+        eventRouter,
+        instrumentType,
+        sourceType,
+        sourceWallet: resolvedSourceWallet,
         deployedAt: dep.deployedAt.toString(),
         strategyPrompt: strategyPrompt as string,
         performanceFeeBps: Number(performanceFeeBps),
@@ -201,12 +235,21 @@ class VaultIndexer {
           address: vaultAddr,
           abi: StrategyVaultABI,
           functionName: 'getCurrentSignal',
-        }) as { direction: number; sizeBps: number; stopPrice: bigint; epoch: bigint; reasoningHash: string; reasoningSummary: string };
+        }) as {
+          direction: number;
+          sizeBps: number;
+          marketId: string;
+          limitPrice: bigint;
+          epoch: bigint;
+          reasoningHash: string;
+          reasoningSummary: string;
+        };
 
         vault.currentSignal = {
           direction: signal.direction,
           sizeBps: signal.sizeBps,
-          stopPrice: signal.stopPrice.toString(),
+          marketId: signal.marketId,
+          limitPrice: signal.limitPrice.toString(),
           epoch: signal.epoch.toString(),
           reasoningHash: signal.reasoningHash,
           reasoningSummary: sanitizePipelineText(signal.reasoningSummary),
@@ -272,13 +315,22 @@ class VaultIndexer {
             address,
             abi: StrategyVaultABI,
             functionName: 'getCurrentSignal',
-          }) as { direction: number; sizeBps: number; stopPrice: bigint; epoch: bigint; reasoningHash: string; reasoningSummary: string };
+          }) as {
+            direction: number;
+            sizeBps: number;
+            marketId: string;
+            limitPrice: bigint;
+            epoch: bigint;
+            reasoningHash: string;
+            reasoningSummary: string;
+          };
 
           const prev = vault.currentSignal;
           const next = {
             direction: signal.direction,
             sizeBps: signal.sizeBps,
-            stopPrice: signal.stopPrice.toString(),
+            marketId: signal.marketId,
+            limitPrice: signal.limitPrice.toString(),
             epoch: signal.epoch.toString(),
             reasoningHash: signal.reasoningHash,
             reasoningSummary: sanitizePipelineText(signal.reasoningSummary),
@@ -291,7 +343,8 @@ class VaultIndexer {
             const signalHash = computeOnChainSignalHash(
               next.direction,
               next.sizeBps,
-              BigInt(next.stopPrice),
+              next.marketId as `0x${string}`,
+              BigInt(next.limitPrice),
               BigInt(next.epoch),
             );
             mirrorWorker.onSignalUpdated({
@@ -299,7 +352,8 @@ class VaultIndexer {
               signalHash,
               direction: next.direction,
               sizeBps: next.sizeBps,
-              stopPrice: BigInt(next.stopPrice),
+              marketId: next.marketId as `0x${string}`,
+              limitPrice: BigInt(next.limitPrice),
               reasoningHash,
               reasoningSummary: next.reasoningSummary,
               timestamp: Number(next.epoch) || Math.floor(Date.now() / 1000),
@@ -311,7 +365,8 @@ class VaultIndexer {
                 signalHash,
                 direction: next.direction,
                 sizeBps: next.sizeBps,
-                stopPrice: BigInt(next.stopPrice),
+                marketId: next.marketId as `0x${string}`,
+                limitPrice: BigInt(next.limitPrice),
                 reasoningHash,
                 reasoningSummary: next.reasoningSummary,
               },

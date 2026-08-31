@@ -121,6 +121,11 @@ class FollowerVaultIndex {
     return this.vaultToFollowers.get(vaultAddress.toLowerCase()) ?? [];
   }
 
+  /** All active followers across indexed vaults (deduped). */
+  getAllFollowers(): Address[] {
+    return [...this.followerToVaults.keys()].map((k) => getAddress(k));
+  }
+
   getLastSyncedAt(): number {
     return this.lastSyncedAt;
   }
