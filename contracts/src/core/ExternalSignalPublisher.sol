@@ -4,7 +4,6 @@ pragma solidity 0.8.30;
 import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
 
 /// @notice Orchestrator stand-in that lets authorized wallets publish signals.
-///         Cloned per custom-agent vault; `StrategyVault.orchestrator` points here.
 contract ExternalSignalPublisher {
     address public owner;
     address public vault;
@@ -14,7 +13,9 @@ contract ExternalSignalPublisher {
 
     event PublisherAdded(address indexed publisher);
     event PublisherRemoved(address indexed publisher);
-    event SignalPublished(int8 direction, uint16 sizeBps, uint256 stopPrice, bytes32 reasoningHash);
+    event SignalPublished(
+        int8 direction, uint16 sizeBps, bytes32 marketId, uint256 limitPrice, bytes32 reasoningHash
+    );
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     modifier onlyOwner() {
@@ -59,19 +60,18 @@ contract ExternalSignalPublisher {
         emit OwnershipTransferred(previous, newOwner);
     }
 
-    /// @notice Commit a trading signal. Callers must be an authorized publisher.
     function publish(
         int8 direction,
         uint16 sizeBps,
-        uint256 stopPrice,
+        bytes32 marketId,
+        uint256 limitPrice,
         string calldata reason
     ) external onlyPublisher {
         bytes32 reasoningHash = keccak256(bytes(reason));
-        IStrategyVault(vault).updateSignal(direction, sizeBps, stopPrice, reason, reasoningHash);
-        emit SignalPublished(direction, sizeBps, stopPrice, reasoningHash);
+        IStrategyVault(vault).updateSignal(direction, sizeBps, marketId, limitPrice, reason, reasoningHash);
+        emit SignalPublished(direction, sizeBps, marketId, limitPrice, reasoningHash);
     }
 
-    /// @notice No-op so an accidental EpochCron tick cannot revert the vault.
     function startPipeline() external payable {}
 
     receive() external payable {}

@@ -5,7 +5,6 @@ import {IStrategyVault} from "../interfaces/IStrategyVault.sol";
 
 interface IPerformanceLedger {
     function recordTrade(int8 direction, uint256 entryPrice, uint256 exitPrice, uint256 size) external;
-    function markToMarket() external view returns (uint256 price, uint256 updatedAt);
 }
 
 interface IERC20 {
@@ -26,6 +25,12 @@ contract StrategyVault is IStrategyVault {
     bool private _initialized;
     bool private _reentrancyLock;
 
+    SourceType public sourceType;
+    InstrumentType public instrumentType;
+    address public sourceWallet;
+    address public relayer;
+    address public eventRouter;
+
     Signal public currentSignal;
     Signal[] private _signalHistory;
 
@@ -38,9 +43,6 @@ contract StrategyVault is IStrategyVault {
     address public mirrorReactor;
     address public stopReactor;
     address public drawdownGuard;
-
-    /// @dev Oracle-scaled entry price (18 decimals) for the open strategist leg.
-    uint256 private _positionEntryPrice;
 
     modifier onlyMirrorReactor() {
         require(msg.sender == mirrorReactor, "not mirror reactor");
@@ -78,7 +80,11 @@ contract StrategyVault is IStrategyVault {
         uint16 _performanceFeeBps,
         address _orchestrator,
         address _paymentToken,
-        uint256 _signalPrice
+        uint256 _signalPrice,
+        SourceType _sourceType,
+        InstrumentType _instrumentType,
+        address _sourceWallet,
+        address _relayer
     ) external {
         require(!_initialized, "already initialized");
         require(_performanceFeeBps <= 5000, "fee too high");
@@ -90,6 +96,18 @@ contract StrategyVault is IStrategyVault {
         orchestrator = _orchestrator;
         paymentToken = _paymentToken;
         signalPrice = _signalPrice;
+        sourceType = _sourceType;
+        instrumentType = _instrumentType;
+        sourceWallet = _sourceWallet;
+        relayer = _relayer;
+    }
+
+    function executionRouter() external view returns (address) {
+        return eventRouter;
+    }
+
+    function setEventRouter(address _router) external onlyOwner {
+        eventRouter = _router;
     }
 
     function setReactors(
@@ -110,45 +128,22 @@ contract StrategyVault is IStrategyVault {
         performanceLedger = _ledger;
     }
 
-    function _readMarkPriceWei() internal view returns (bool ok, uint256 mark) {
-        if (performanceLedger == address(0)) return (false, 0);
-        try IPerformanceLedger(performanceLedger).markToMarket() returns (uint256 price, uint256) {
-            return (true, price * 1e10);
-        } catch {
-            return (false, 0);
-        }
-    }
-
-    function _settlePreviousTrade(Signal memory previous) internal {
-        if (previous.direction == 0 || previous.sizeBps == 0) return;
-        if (performanceLedger == address(0)) return;
-
-        (bool ok, uint256 mark) = _readMarkPriceWei();
-        if (!ok) return;
-
-        uint256 entry = _positionEntryPrice > 0 ? _positionEntryPrice : mark;
-        uint256 size = (uint256(previous.sizeBps) * 1e18) / 10_000;
-        IPerformanceLedger(performanceLedger).recordTrade(previous.direction, entry, mark, size);
-        _positionEntryPrice = 0;
-    }
-
     function updateSignal(
         int8 direction,
         uint16 sizeBps,
-        uint256 stopPrice,
+        bytes32 marketId,
+        uint256 limitPrice,
         string calldata reasoningSummary,
         bytes32 reasoningHash
     ) external onlyOrchestrator notEmergency {
         require(direction >= -1 && direction <= 1, "invalid direction");
         require(sizeBps <= 10000, "invalid size");
 
-        Signal memory previous = currentSignal;
-        _settlePreviousTrade(previous);
-
         Signal memory sig = Signal({
             direction: direction,
             sizeBps: sizeBps,
-            stopPrice: stopPrice,
+            marketId: marketId,
+            limitPrice: limitPrice,
             epoch: block.number,
             reasoningHash: reasoningHash,
             reasoningSummary: reasoningSummary
@@ -157,16 +152,11 @@ contract StrategyVault is IStrategyVault {
         currentSignal = sig;
         _signalHistory.push(sig);
 
-        if (direction != 0 && sizeBps != 0 && performanceLedger != address(0)) {
-            (bool ok, uint256 mark) = _readMarkPriceWei();
-            if (ok) _positionEntryPrice = mark;
-        }
-
         bytes32 signalHash = keccak256(
-            abi.encodePacked(direction, sizeBps, stopPrice, block.number)
+            abi.encodePacked(direction, sizeBps, marketId, limitPrice, block.number)
         );
 
-        emit SignalUpdated(signalHash, direction, sizeBps, stopPrice, reasoningSummary, reasoningHash);
+        emit SignalUpdated(signalHash, direction, sizeBps, marketId, limitPrice, reasoningSummary, reasoningHash);
     }
 
     function subscribe(FollowerConfig calldata config) external payable nonReentrant notEmergency {
@@ -233,19 +223,19 @@ contract StrategyVault is IStrategyVault {
         );
 
         emergencyMode = true;
-        _settlePreviousTrade(currentSignal);
 
         currentSignal = Signal({
             direction: int8(0),
             sizeBps: 0,
-            stopPrice: 0,
+            marketId: bytes32(0),
+            limitPrice: 0,
             epoch: block.number,
             reasoningHash: keccak256(bytes(reason)),
             reasoningSummary: reason
         });
 
-        bytes32 signalHash = keccak256(abi.encodePacked(int8(0), uint16(0), uint256(0), block.number));
-        emit SignalUpdated(signalHash, 0, 0, 0, reason, keccak256(bytes(reason)));
+        bytes32 signalHash = keccak256(abi.encodePacked(int8(0), uint16(0), bytes32(0), uint256(0), block.number));
+        emit SignalUpdated(signalHash, 0, 0, bytes32(0), 0, reason, keccak256(bytes(reason)));
         emit EmergencyExit(msg.sender, reason);
     }
 

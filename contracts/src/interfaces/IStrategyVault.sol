@@ -2,20 +2,31 @@
 pragma solidity 0.8.30;
 
 interface IStrategyVault {
+    enum SourceType {
+        AGENT,
+        WALLET
+    }
+
+    enum InstrumentType {
+        BINARY,
+        PERP
+    }
+
     struct Signal {
-        int8 direction;        // 1 = long, -1 = short, 0 = flat
-        uint16 sizeBps;        // position size in basis points (0-10000)
-        uint256 stopPrice;     // stop-loss price (18 decimals)
-        uint256 epoch;         // epoch when signal was generated
-        bytes32 reasoningHash; // keccak256 of full reasoning
+        int8 direction; // 1 = UP (buy Yes), -1 = DOWN (buy No), 0 = FLAT
+        uint16 sizeBps;
+        bytes32 marketId;
+        uint256 limitPrice;
+        uint256 epoch;
+        bytes32 reasoningHash;
         string reasoningSummary;
     }
 
     struct FollowerConfig {
-        uint16 riskPct;          // risk scaling percentage (100 = 1x, 200 = 2x)
-        uint256 maxPositionSize; // max position in native token
-        uint16 maxSlippageBps;   // max slippage tolerance in bps
-        uint256 stopLossBuffer;  // additional stop-loss buffer (18 decimals)
+        uint16 riskPct;
+        uint256 maxPositionSize; // max collateral per mirror (tUSDC binary / USDso perp)
+        uint16 maxSlippageBps;
+        uint256 stopLossBuffer; // unused for event contracts; kept for ABI compat
         bool active;
     }
 
@@ -23,7 +34,8 @@ interface IStrategyVault {
         bytes32 indexed signalHash,
         int8 direction,
         uint16 sizeBps,
-        uint256 stopPrice,
+        bytes32 marketId,
+        uint256 limitPrice,
         string reasoningSummary,
         bytes32 reasoningHash
     );
@@ -40,7 +52,8 @@ interface IStrategyVault {
     function updateSignal(
         int8 direction,
         uint16 sizeBps,
-        uint256 stopPrice,
+        bytes32 marketId,
+        uint256 limitPrice,
         string calldata reasoningSummary,
         bytes32 reasoningHash
     ) external;
@@ -55,4 +68,10 @@ interface IStrategyVault {
     function getFollowerConfig(address follower) external view returns (FollowerConfig memory);
     function signalPrice() external view returns (uint256);
     function paymentToken() external view returns (address);
+    function sourceType() external view returns (SourceType);
+    function sourceWallet() external view returns (address);
+    function relayer() external view returns (address);
+    function eventRouter() external view returns (address);
+    function executionRouter() external view returns (address);
+    function instrumentType() external view returns (InstrumentType);
 }
