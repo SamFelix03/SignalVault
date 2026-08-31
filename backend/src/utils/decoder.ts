@@ -1,4 +1,4 @@
-import { decodeEventLog, getAddress, type Address, type Log } from 'viem';
+import { decodeEventLog, getAddress, type Address, type Hex, type Log } from 'viem';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { PerformanceLedgerABI } from '../abis/PerformanceLedger';
 import { vaultIndexer } from '../services/vault-indexer';
@@ -8,7 +8,8 @@ export interface DecodedSignalUpdated {
   signalHash: `0x${string}`;
   direction: number;
   sizeBps: number;
-  stopPrice: bigint;
+  marketId: Hex;
+  limitPrice: bigint;
   reasoningHash: `0x${string}`;
   reasoningSummary: string;
 }
@@ -42,7 +43,8 @@ export function decodeSignalUpdated(log: Log): DecodedSignalUpdated {
     signalHash,
     direction: (decoded.args as any).direction,
     sizeBps: (decoded.args as any).sizeBps,
-    stopPrice: (decoded.args as any).stopPrice,
+    marketId: (decoded.args as any).marketId,
+    limitPrice: (decoded.args as any).limitPrice,
     reasoningHash: (decoded.args as any).reasoningHash,
     reasoningSummary: (decoded.args as any).reasoningSummary ?? '',
   };

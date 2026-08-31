@@ -1,4 +1,4 @@
-import { type Address, encodePacked, getAddress, keccak256, parseAbi } from 'viem';
+import { type Address, encodePacked, getAddress, keccak256, parseAbi, type Hex } from 'viem';
 import { publicClient } from '../config/chains';
 import { StrategyVaultABI } from '../abis/StrategyVault';
 import { vaultIndexer } from './vault-indexer';
@@ -18,17 +18,18 @@ const vaultAbi = parseAbi([
   'function getFollowerConfig(address) view returns ((uint16,uint256,uint16,uint256,bool))',
 ]);
 
-/** Matches StrategyVault.updateSignal: keccak256(abi.encodePacked(direction, sizeBps, stopPrice, block.number)). */
+/** Matches StrategyVault.updateSignal: keccak256(abi.encodePacked(direction, sizeBps, marketId, limitPrice, epoch)). */
 export function computeOnChainSignalHash(
   direction: number,
   sizeBps: number,
-  stopPrice: bigint,
+  marketId: Hex,
+  limitPrice: bigint,
   epoch: bigint,
 ): `0x${string}` {
   return keccak256(
     encodePacked(
-      ['int8', 'uint16', 'uint256', 'uint256'],
-      [direction, sizeBps, stopPrice, epoch],
+      ['int8', 'uint16', 'bytes32', 'uint256', 'uint256'],
+      [direction, sizeBps, marketId, limitPrice, epoch],
     ),
   );
 }
@@ -39,7 +40,7 @@ export function computeQuoteNotional(
   sizeBps: number,
   riskPct: number,
 ): bigint {
-  return (maxPositionSize * BigInt(sizeBps) * BigInt(riskPct)) / (10_000n * 100n);
+  return (maxPositionSize * BigInt(sizeBps) * BigInt(riskPct)) / (10_000n * 10_000n);
 }
 
 export function computePnlPercent(direction: number, entryCents: number, exitCents: number): number {
@@ -56,8 +57,8 @@ export function computePnlUsd(direction: number, entryCents: number, exitCents: 
   return Math.round(notionalUsd * pct * 100) / 100;
 }
 
-function stopPriceToCents(stopPrice: bigint): number {
-  return Number(stopPrice);
+function limitPriceRaw(limitPrice: bigint): number {
+  return Number(limitPrice);
 }
 
 class MirrorWorker {
@@ -140,7 +141,7 @@ class MirrorWorker {
         reasoningHash: event.reasoningHash,
         openedAt: timestamp,
         reasoningSummary: event.reasoningSummary,
-        stopPriceCents: stopPriceToCents(event.stopPrice),
+        stopPriceCents: limitPriceRaw(event.limitPrice),
       };
       followerMirrorStore.setOpenLeg(leg);
       logger.info(CTX, `Opened signal-sync leg`, {
@@ -199,7 +200,8 @@ class MirrorWorker {
     }) as {
       direction: number;
       sizeBps: number;
-      stopPrice: bigint;
+      marketId: Hex;
+      limitPrice: bigint;
       epoch: bigint;
       reasoningHash: string;
       reasoningSummary: string;
@@ -209,14 +211,16 @@ class MirrorWorker {
     const signalHash = computeOnChainSignalHash(
       signal.direction,
       signal.sizeBps,
-      signal.stopPrice,
+      signal.marketId,
+      signal.limitPrice,
       signal.epoch,
     );
     await this.onSignalUpdated({
       vault: vaultAddress,
       direction: signal.direction,
       sizeBps: signal.sizeBps,
-      stopPrice: signal.stopPrice,
+      marketId: signal.marketId,
+      limitPrice: signal.limitPrice,
       reasoningHash,
       reasoningSummary: sanitizePipelineText(signal.reasoningSummary),
       signalHash,
@@ -241,7 +245,8 @@ class MirrorWorker {
       const signalHash = computeOnChainSignalHash(
         signal.direction,
         signal.sizeBps,
-        BigInt(signal.stopPrice),
+        signal.marketId as Hex,
+        BigInt(signal.limitPrice),
         BigInt(signal.epoch),
       );
 
@@ -255,7 +260,8 @@ class MirrorWorker {
           vault: vault.address,
           direction: signal.direction,
           sizeBps: signal.sizeBps,
-          stopPrice: BigInt(signal.stopPrice),
+          marketId: signal.marketId as Hex,
+          limitPrice: BigInt(signal.limitPrice),
           reasoningHash,
           reasoningSummary: signal.reasoningSummary,
           signalHash,

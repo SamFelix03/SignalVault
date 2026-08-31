@@ -236,7 +236,8 @@ async function signalForHash(
   reasoningSummary: string;
   direction: number;
   sizeBps: number;
-  stopPrice: string;
+  marketId: string;
+  limitPrice: string;
 } | null> {
   const length = await publicClient.readContract({
     address: vaultAddress,
@@ -258,7 +259,8 @@ async function signalForHash(
     reasoningSummary: string;
     direction: number;
     sizeBps: number;
-    stopPrice: bigint;
+    marketId: string;
+    limitPrice: bigint;
   }>;
 
   const match = history.find((s) => s.reasoningHash.toLowerCase() === reasoningHash.toLowerCase());
@@ -269,7 +271,8 @@ async function signalForHash(
     reasoningSummary: match.reasoningSummary,
     direction: Number(match.direction),
     sizeBps: Number(match.sizeBps),
-    stopPrice: match.stopPrice.toString(),
+    marketId: match.marketId,
+    limitPrice: match.limitPrice.toString(),
   };
 }
 
@@ -279,7 +282,7 @@ async function signalEpochForHash(vaultAddress: Address, reasoningHash: string):
 }
 
 const SIGNAL_UPDATED = parseAbiItem(
-  'event SignalUpdated(bytes32 indexed signalHash, int8 direction, uint16 sizeBps, uint256 stopPrice, string reasoningSummary, bytes32 reasoningHash)',
+  'event SignalUpdated(bytes32 indexed signalHash, int8 direction, uint16 sizeBps, bytes32 marketId, uint256 limitPrice, string reasoningSummary, bytes32 reasoningHash)',
 );
 
 async function getSignalUpdatedLogsInChunks(
@@ -488,7 +491,8 @@ async function reasoningHashForSignalHash(
   }) as unknown as Array<{
     direction: number;
     sizeBps: number;
-    stopPrice: bigint;
+    marketId: string;
+    limitPrice: bigint;
     epoch: bigint;
     reasoningHash: string;
   }>;
@@ -498,7 +502,8 @@ async function reasoningHashForSignalHash(
     const computed = computeOnChainSignalHash(
       signal.direction,
       signal.sizeBps,
-      signal.stopPrice,
+      signal.marketId as Hex,
+      signal.limitPrice,
       signal.epoch,
     );
     if (computed.toLowerCase() === normalized) {

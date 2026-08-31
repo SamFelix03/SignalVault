@@ -20,7 +20,7 @@ import {
 const CTX = 'StreamPublisher';
 
 const EVENT_SIGNATURES = {
-  SignalUpdated: keccak256(toBytes('SignalUpdated(bytes32,int8,uint16,uint256,string,bytes32)')),
+  SignalUpdated: keccak256(toBytes('SignalUpdated(bytes32,int8,uint16,bytes32,uint256,string,bytes32)')),
   TradeSettled: keccak256(toBytes('TradeSettled(uint256,int8,int256,uint256,uint256)')),
   FollowerTradeSettled: keccak256(toBytes('FollowerTradeSettled(address,address,int8,uint256,uint256,uint256,int256,bytes32)')),
   DrawdownUpdated: keccak256(toBytes('DrawdownUpdated(address,uint256,uint256)')),
@@ -203,7 +203,8 @@ class StreamPublisher {
         { name: 'vault', value: decoded.vault, type: 'address' },
         { name: 'direction', value: BigInt(decoded.direction), type: 'int8' },
         { name: 'sizeBps', value: BigInt(decoded.sizeBps), type: 'uint16' },
-        { name: 'stopPrice', value: decoded.stopPrice, type: 'uint256' },
+        { name: 'marketId', value: decoded.marketId, type: 'bytes32' },
+        { name: 'limitPrice', value: decoded.limitPrice, type: 'uint256' },
         { name: 'reasoningHash', value: decoded.reasoningHash, type: 'bytes32' },
         { name: 'reasoning', value: sanitizePipelineText(decoded.reasoningSummary), type: 'string' },
       ]);
@@ -218,7 +219,8 @@ class StreamPublisher {
       vaultIndexer.addSignalRecord(decoded.vault, {
         direction: decoded.direction,
         sizeBps: decoded.sizeBps,
-        stopPrice: decoded.stopPrice.toString(),
+        marketId: decoded.marketId,
+        limitPrice: decoded.limitPrice.toString(),
         reasoningHash: decoded.reasoningHash,
         reasoningSummary: sanitizePipelineText(decoded.reasoningSummary),
         epoch: now.toString(),
@@ -383,7 +385,7 @@ class StreamPublisher {
           const signalLogs = await publicClient.getLogs({
             address: vault.address,
             event: parseAbiItem(
-              'event SignalUpdated(bytes32 indexed signalHash, int8 direction, uint16 sizeBps, uint256 stopPrice, string reasoningSummary, bytes32 reasoningHash)'
+              'event SignalUpdated(bytes32 indexed signalHash, int8 direction, uint16 sizeBps, bytes32 marketId, uint256 limitPrice, string reasoningSummary, bytes32 reasoningHash)'
             ),
             fromBlock: this.lastPolledBlock + 1n,
             toBlock: latest,
