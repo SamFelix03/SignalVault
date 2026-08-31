@@ -21,13 +21,11 @@ function directionLabel(direction: number): string {
   return 'FLAT';
 }
 
-function formatUsdCents(cents: bigint | number): string {
-  const raw = typeof cents === 'bigint' ? Number(cents) : cents;
+function formatLimitPrice(limitPrice: bigint): string {
+  const raw = Number(limitPrice);
   if (!Number.isFinite(raw) || raw <= 0) return '—';
-  return (raw / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  const prob = raw / 1e6;
+  return `${(prob * 100).toFixed(1)}% Up (${prob.toFixed(3)})`;
 }
 
 function parseVaultName(strategyPrompt: string): string {
@@ -69,7 +67,7 @@ function buildMessage(
     `<b>Vault:</b> <code>${decoded.vault}</code>`,
     `<b>Direction:</b> ${directionLabel(decoded.direction)}`,
     `<b>Size:</b> ${(decoded.sizeBps / 100).toFixed(1)}%`,
-    `<b>Stop:</b> $${formatUsdCents(decoded.stopPrice)}`,
+    `<b>Limit:</b> ${formatLimitPrice(decoded.limitPrice)}`,
   ];
 
   if (epoch) {
