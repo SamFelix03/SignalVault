@@ -1,7 +1,8 @@
 'use client'
 
 import { TrendingUp, BarChart3, Target, TrendingDown, Hash, Users, Coins } from 'lucide-react'
-import { formatEther } from 'viem'
+import { formatUnits } from 'viem'
+import { TUSDC_DECIMALS } from '@/lib/constants'
 import { formatPnlPercent } from '@/lib/utils'
 import { MetricCard } from '@/components/common/metric-card'
 import type { VaultStats as VaultStatsType } from '@/types/vault'
@@ -52,7 +53,7 @@ export function VaultStatsPanel({ stats }: VaultStatsProps) {
       title: 'Signal Price',
       value:
         stats.signalPrice && stats.signalPrice !== '0'
-          ? `${formatEther(BigInt(stats.signalPrice))} SVT`
+          ? `${formatUnits(BigInt(stats.signalPrice), TUSDC_DECIMALS)} tUSDC`
           : 'Free',
       changeType: 'neutral' as const,
       icon: Coins,

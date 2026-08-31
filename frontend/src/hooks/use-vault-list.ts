@@ -5,9 +5,10 @@ import { API_URL } from '@/lib/contracts'
 import { useVaultEvents } from '@/hooks/use-vault-events'
 import { isMockMode } from '@/lib/mock-mode'
 import { mockVaults } from '@/lib/mock-data'
-import type { VaultInfo, Signal } from '@/types/vault'
+import type { VaultInfo, Signal, VaultSourceType } from '@/types/vault'
 import { sanitizeReasoning } from '@/lib/sanitize-pipeline-text'
 import { parseVaultStrategyPrompt } from '@/lib/vault-strategy'
+import { normalizeSourceType } from '@/lib/vault-source'
 
 interface BackendVault {
   address: string
@@ -18,15 +19,24 @@ interface BackendVault {
   deployedAt: string
   orchestrator: string
   performanceLedger: string
+  eventRouter?: string
+  sourceType?: VaultSourceType | number | string
+  sourceWallet?: string
   publisherKind?: 'native' | 'custom'
   currentSignal: {
     direction: number
     sizeBps: number
-    stopPrice: string
+    marketId?: string
+    limitPrice?: string
+    stopPrice?: string
     epoch: string
     reasoningHash: string
     reasoningSummary: string
   }
+}
+
+function mapSourceType(value: BackendVault['sourceType']): VaultSourceType {
+  return normalizeSourceType(value)
 }
 
 function mapVault(v: BackendVault): VaultInfo {
@@ -34,7 +44,8 @@ function mapVault(v: BackendVault): VaultInfo {
   const signal: Signal = {
     direction: Number(sig?.direction ?? 0),
     sizeBps: Number(sig?.sizeBps ?? 0),
-    stopPrice: BigInt(sig?.stopPrice ?? '0'),
+    marketId: sig?.marketId ?? '0x0000000000000000000000000000000000000000000000000000000000000000',
+    limitPrice: BigInt(sig?.limitPrice ?? sig?.stopPrice ?? '0'),
     epoch: Number(sig?.epoch ?? 0),
     reasoningHash: sig?.reasoningHash ?? '',
     reasoning: sanitizeReasoning(sig?.reasoningSummary),
@@ -54,6 +65,9 @@ function mapVault(v: BackendVault): VaultInfo {
     followerCount: v.followerCount ?? 0,
     createdAt: Number(v.deployedAt ?? 0),
     publisherKind: v.publisherKind ?? 'native',
+    sourceType: mapSourceType(v.sourceType),
+    sourceWallet: v.sourceWallet,
+    eventRouter: v.eventRouter,
   }
 }
 

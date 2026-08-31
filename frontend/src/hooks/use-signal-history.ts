@@ -50,7 +50,8 @@ export function useSignalHistory(vaultAddress: string) {
         const raw = historyData as readonly {
           direction: number
           sizeBps: number
-          stopPrice: bigint
+          marketId: `0x${string}`
+          limitPrice: bigint
           epoch: bigint
           reasoningHash: `0x${string}`
           reasoningSummary: string
@@ -64,7 +65,8 @@ export function useSignalHistory(vaultAddress: string) {
         const mapped: Signal[] = raw.map(s => ({
           direction: toSignedInt8(s.direction),
           sizeBps: Number(s.sizeBps),
-          stopPrice: s.stopPrice,
+          marketId: s.marketId,
+          limitPrice: s.limitPrice,
           epoch: Number(s.epoch),
           reasoningHash: s.reasoningHash,
           reasoning: sanitizeReasoning(s.reasoningSummary),

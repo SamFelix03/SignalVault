@@ -8,16 +8,17 @@ import {
   useAccount,
   useReadContract,
 } from 'wagmi'
-import { parseEther, formatEther, maxUint256, type Address } from 'viem'
-import { vaultConfig, paymentTokenConfig } from '@/lib/contracts'
+import { parseUnits, formatUnits, maxUint256, type Address } from 'viem'
+import { vaultConfig, tusdcConfig } from '@/lib/contracts'
+import { TUSDC_DECIMALS } from '@/lib/constants'
 import { TxStatus } from '@/components/common/tx-status'
 import { TelegramAlertsSetup } from '@/components/vault/telegram-alerts-setup'
+import { PerpFollowerSetup } from '@/components/vault/perp-follower-setup'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
 import { Button } from '@/components/ui/button'
-
 
 interface SubscribeFormProps {
   vaultAddress: Address
@@ -25,54 +26,89 @@ interface SubscribeFormProps {
   onSuccess?: () => void
 }
 
+type PendingAction = 'approve-vault' | 'approve-router' | 'subscribe' | null
+
 export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: SubscribeFormProps) {
   const { address } = useAccount()
   const [riskBps, setRiskBps] = useState(1000)
-  const [maxPositionUsd, setMaxPositionUsd] = useState('1000')
-  const [maxSlippageBps, setMaxSlippageBps] = useState(100)
-  const [stopLossBuffer, setStopLossBuffer] = useState('50')
-  const [pendingAction, setPendingAction] = useState<'approve' | 'subscribe' | null>(null)
+  const [maxCollateral, setMaxCollateral] = useState('100')
+  const [maxSlippageBps, setMaxSlippageBps] = useState(300)
+  const [stopLossBuffer, setStopLossBuffer] = useState('0')
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null)
 
   const { data: signalPrice } = useReadContract({
     ...vaultConfig(vaultAddress),
     functionName: 'signalPrice',
   })
 
-  const token = paymentTokenConfig
-  const price = signalPrice ?? BigInt(0)
-  const isPaidVault = price > BigInt(0) && Boolean(token)
-
-  const { data: tokenBalance } = useReadContract({
-    ...token!,
-    functionName: 'balanceOf',
-    args: address ? [address] : undefined,
-    query: { enabled: Boolean(isPaidVault && token && address) },
+  const { data: eventRouter } = useReadContract({
+    ...vaultConfig(vaultAddress),
+    functionName: 'eventRouter',
   })
 
-  const { data: allowance, refetch: refetchAllowance } = useReadContract({
-    ...token!,
+  const { data: instrumentTypeRaw } = useReadContract({
+    ...vaultConfig(vaultAddress),
+    functionName: 'instrumentType',
+  })
+
+  const isPerpVault = Number(instrumentTypeRaw ?? 0) === 1
+
+  const price = signalPrice ?? BigInt(0)
+  const isPaidVault = price > BigInt(0)
+  const routerAddress = (eventRouter as Address | undefined) ?? undefined
+  const maxCollateralWei = parseUnits(maxCollateral || '0', TUSDC_DECIMALS)
+
+  const { data: tusdcBalance, refetch: refetchBalance } = useReadContract({
+    ...tusdcConfig,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) },
+  })
+
+  const { data: vaultAllowance, refetch: refetchVaultAllowance } = useReadContract({
+    ...tusdcConfig,
     functionName: 'allowance',
     args: address ? [address, vaultAddress] : undefined,
-    query: { enabled: Boolean(isPaidVault && token && address) },
+    query: { enabled: Boolean(isPaidVault && address) },
+  })
+
+  const { data: routerAllowance, refetch: refetchRouterAllowance } = useReadContract({
+    ...tusdcConfig,
+    functionName: 'allowance',
+    args: address && routerAddress ? [address, routerAddress] : undefined,
+    query: { enabled: Boolean(address && routerAddress) },
   })
 
   const { writeContract, data: txHash, isPending, error: writeError, reset } = useWriteContract()
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
-  const hasEnoughAllowance =
-    !isPaidVault || (allowance !== undefined && allowance >= price)
-  const hasUnlimitedAllowance =
-    allowance !== undefined && allowance >= maxUint256 / BigInt(2)
-  const hasEnoughBalance =
-    !isPaidVault || (tokenBalance !== undefined && tokenBalance >= price)
+  const hasEnoughVaultAllowance =
+    !isPaidVault || (vaultAllowance !== undefined && vaultAllowance >= price)
+  const hasUnlimitedVaultAllowance =
+    vaultAllowance !== undefined && vaultAllowance >= maxUint256 / BigInt(2)
+  const hasEnoughRouterAllowance =
+    routerAllowance !== undefined && maxCollateralWei > BigInt(0) && routerAllowance >= maxCollateralWei
+  const hasEnoughBalanceForFees =
+    !isPaidVault || (tusdcBalance !== undefined && tusdcBalance >= price)
+  const hasEnoughBalanceForTrading =
+    isPerpVault || (tusdcBalance !== undefined && tusdcBalance >= maxCollateralWei)
 
-  function handleApprove() {
-    if (!token) return
-    setPendingAction('approve')
+  function handleApproveVault() {
+    setPendingAction('approve-vault')
     writeContract({
-      ...token,
+      ...tusdcConfig,
       functionName: 'approve',
       args: [vaultAddress, maxUint256],
+    })
+  }
+
+  function handleApproveRouter() {
+    if (!routerAddress) return
+    setPendingAction('approve-router')
+    writeContract({
+      ...tusdcConfig,
+      functionName: 'approve',
+      args: [routerAddress, maxCollateralWei],
     })
   }
 
@@ -83,9 +119,9 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
       functionName: 'subscribe',
       args: [{
         riskPct: riskBps,
-        maxPositionSize: parseEther(maxPositionUsd),
+        maxPositionSize: maxCollateralWei,
         maxSlippageBps: maxSlippageBps,
-        stopLossBuffer: parseEther(stopLossBuffer),
+        stopLossBuffer: parseUnits(stopLossBuffer || '0', TUSDC_DECIMALS),
         active: true,
       }],
     })
@@ -102,14 +138,25 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
   const txState = isPending ? 'pending' : isConfirming ? 'confirming' : isSuccess ? 'success' : writeError ? 'error' : 'idle'
 
   function handleClose() {
-    const wasApprove = pendingAction === 'approve'
+    const action = pendingAction
     reset()
     setPendingAction(null)
     if (isSuccess) {
-      if (wasApprove) void refetchAllowance()
-      else onSuccess?.()
+      if (action === 'approve-vault') void refetchVaultAllowance()
+      else if (action === 'approve-router') void refetchRouterAllowance()
+      else void refetchBalance()
+      if (action === 'subscribe') onSuccess?.()
     }
   }
+
+  const needsVaultApproval = isPaidVault && !hasEnoughVaultAllowance
+  const needsRouterApproval = Boolean(routerAddress) && !isPerpVault && !hasEnoughRouterAllowance
+  const canSubscribe =
+    !needsVaultApproval &&
+    !needsRouterApproval &&
+    hasEnoughBalanceForFees &&
+    hasEnoughBalanceForTrading &&
+    maxCollateralWei > BigInt(0)
 
   if (!address) {
     return (
@@ -131,37 +178,71 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
       <CardContent>
         {!isSubscribed ? (
           <div className="space-y-4">
-            {isPaidVault && (
-              <div className="rounded-lg border border-border/60 bg-secondary/20 p-3 text-sm space-y-2">
-                <p className="text-foreground">
-                  Signal price:{' '}
-                  <span className="font-mono font-medium">{formatEther(price)} SVT</span> per signal
-                </p>
+            <div className="rounded-lg border border-border/60 bg-secondary/20 p-3 text-sm space-y-2">
+              {isPerpVault ? (
+                <>
+                  <p className="text-foreground font-medium">Perp vault — USDso pulled per signal</p>
+                  <p className="text-xs text-muted-foreground">
+                    Signal fees use tUSDC. Mirror trades pull USDso from your wallet automatically each
+                    signal (approve your mirror wallet after subscribing). Swap STT → USDso on SOMI/USDso if needed.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-foreground font-medium">All costs use tUSDC</p>
+                  <p className="text-xs text-muted-foreground">
+                    One token for signal fees and Event Contract mirror trades on Somnia Markets.
+                  </p>
+                </>
+              )}
+              {isPaidVault && (
                 <p className="text-xs text-muted-foreground">
-                  One-time approval lets the vault pull {formatEther(price)} SVT from your wallet
-                  each time a signal fires, until you unsubscribe.
+                  Signal price:{' '}
+                  <span className="font-mono text-foreground">
+                    {formatUnits(price, TUSDC_DECIMALS)} tUSDC
+                  </span>{' '}
+                  per mirrored signal (paid to strategist).
                 </p>
-                {tokenBalance !== undefined && (
-                  <p className="text-xs text-muted-foreground">
-                    Your balance: <span className="font-mono text-foreground">{formatEther(tokenBalance)} SVT</span>
-                    {!hasEnoughBalance && (
-                      <>
-                        {' '}
-                        —{' '}
-                        <Link href={`/token?vault=${vaultAddress}`} className="text-accent hover:underline">
-                          Mint SVT
-                        </Link>
-                      </>
-                    )}
-                  </p>
-                )}
-                {allowance !== undefined && (
-                  <p className="text-xs text-muted-foreground">
-                    Allowance: <span className="font-mono text-foreground">{formatEther(allowance)} SVT</span>
-                  </p>
-                )}
-              </div>
-            )}
+              )}
+              <p className="text-xs text-muted-foreground">
+                Collateral budget:{' '}
+                <span className="font-mono text-foreground">{maxCollateral} tUSDC</span> max per mirror.
+              </p>
+              {tusdcBalance !== undefined && (
+                <p className="text-xs text-muted-foreground">
+                  Your tUSDC balance:{' '}
+                  <span className="font-mono text-foreground">
+                    {formatUnits(tusdcBalance, TUSDC_DECIMALS)} tUSDC
+                  </span>
+                  {!hasEnoughBalanceForTrading && (
+                    <span className="block mt-1">
+                      <Link href="/token" className="text-accent hover:underline">
+                        Get tUSDC
+                      </Link>{' '}
+                      for mirror trading and signal fees.
+                    </span>
+                  )}
+                </p>
+              )}
+              {isPaidVault && vaultAllowance !== undefined && (
+                <p className="text-xs text-muted-foreground">
+                  Vault allowance (signal fees):{' '}
+                  <span className="font-mono text-foreground">
+                    {hasUnlimitedVaultAllowance
+                      ? 'Unlimited'
+                      : `${formatUnits(vaultAllowance, TUSDC_DECIMALS)} tUSDC`}
+                  </span>
+                </p>
+              )}
+              {routerAllowance !== undefined && routerAddress && (
+                <p className="text-xs text-muted-foreground">
+                  Router allowance (trading):{' '}
+                  <span className="font-mono text-foreground">
+                    {formatUnits(routerAllowance, TUSDC_DECIMALS)} tUSDC
+                  </span>
+                </p>
+              )}
+            </div>
 
             <div className="space-y-2">
               <Label>
@@ -171,12 +252,14 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="maxPosition">Max Position (USD)</Label>
+              <Label htmlFor="maxCollateral">
+                {isPerpVault ? 'Max margin budget (USDso)' : 'Max Collateral (tUSDC)'}
+              </Label>
               <Input
-                id="maxPosition"
+                id="maxCollateral"
                 type="number"
-                value={maxPositionUsd}
-                onChange={e => setMaxPositionUsd(e.target.value)}
+                value={maxCollateral}
+                onChange={e => setMaxCollateral(e.target.value)}
                 className="font-mono"
               />
             </div>
@@ -188,33 +271,31 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
               <Slider min={10} max={500} step={10} value={[maxSlippageBps]} onValueChange={v => setMaxSlippageBps(v[0])} />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="stopLoss">Stop Loss Buffer (USD)</Label>
-              <Input
-                id="stopLoss"
-                type="number"
-                value={stopLossBuffer}
-                onChange={e => setStopLossBuffer(e.target.value)}
-                className="font-mono"
-              />
-            </div>
-
-            {isPaidVault && !hasEnoughAllowance && (
+            {needsVaultApproval && (
               <Button
-                onClick={handleApprove}
-                disabled={isPending || isConfirming || !hasEnoughBalance}
+                onClick={handleApproveVault}
+                disabled={isPending || isConfirming || !hasEnoughBalanceForFees}
                 variant="secondary"
                 className="w-full"
               >
-                Approve SVT spending
+                Approve tUSDC for signal fees
+              </Button>
+            )}
+
+            {needsRouterApproval && (
+              <Button
+                onClick={handleApproveRouter}
+                disabled={isPending || isConfirming || !hasEnoughBalanceForTrading || !routerAddress}
+                variant="secondary"
+                className="w-full"
+              >
+                Approve tUSDC for mirror trading
               </Button>
             )}
 
             <Button
               onClick={handleSubscribe}
-              disabled={
-                Boolean(isPending || isConfirming || (isPaidVault && (!hasEnoughAllowance || !hasEnoughBalance)))
-              }
+              disabled={Boolean(isPending || isConfirming || !canSubscribe)}
               className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
             >
               Subscribe
@@ -223,22 +304,52 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-success">You are subscribed to this vault.</p>
-            {isPaidVault && allowance !== undefined && (
+            {isPaidVault && vaultAllowance !== undefined && (
               <p className="text-xs text-muted-foreground">
-                SVT allowance:{' '}
+                Vault allowance (signal fees):{' '}
                 <span className="font-mono text-foreground">
-                  {hasUnlimitedAllowance ? 'Unlimited' : `${formatEther(allowance)} SVT`}
+                  {hasUnlimitedVaultAllowance
+                    ? 'Unlimited'
+                    : `${formatUnits(vaultAllowance, TUSDC_DECIMALS)} tUSDC`}
                 </span>
               </p>
             )}
-            {isPaidVault && !hasUnlimitedAllowance && (
+            {routerAllowance !== undefined && (
+              <p className="text-xs text-muted-foreground">
+                Router allowance (trading):{' '}
+                <span className="font-mono text-foreground">
+                  {formatUnits(routerAllowance, TUSDC_DECIMALS)} tUSDC
+                </span>
+                {routerAddress && (
+                  <span className="block mt-1 font-mono text-[10px] break-all">
+                    Router: {routerAddress}
+                  </span>
+                )}
+              </p>
+            )}
+            {needsRouterApproval && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Approve tUSDC for the vault&apos;s trading router so mirrored binary orders can pull collateral.
+              </p>
+            )}
+            {isPaidVault && !hasUnlimitedVaultAllowance && (
               <Button
-                onClick={handleApprove}
+                onClick={handleApproveVault}
                 disabled={isPending || isConfirming}
                 variant="secondary"
                 className="w-full"
               >
-                Approve SVT spending
+                Increase tUSDC allowance (signal fees)
+              </Button>
+            )}
+            {needsRouterApproval && (
+              <Button
+                onClick={handleApproveRouter}
+                disabled={isPending || isConfirming}
+                variant="secondary"
+                className="w-full"
+              >
+                Approve router for trading ({maxCollateral} tUSDC)
               </Button>
             )}
             <Button
@@ -251,6 +362,7 @@ export function SubscribeForm({ vaultAddress, isSubscribed, onSuccess }: Subscri
             </Button>
 
             <TelegramAlertsSetup vaultAddress={vaultAddress} />
+            {isPerpVault && <PerpFollowerSetup vaultAddress={vaultAddress} />}
           </div>
         )}
 

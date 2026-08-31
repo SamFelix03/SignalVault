@@ -1,19 +1,27 @@
 'use client'
 
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
-import { cn, directionLabel, directionBg, directionColor, formatStopPrice } from '@/lib/utils'
+import { cn, directionLabel, directionBg, directionColor, formatLimitPrice, formatMarketId } from '@/lib/utils'
 import type { Signal } from '@/types/vault'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface SignalDisplayProps {
   signal: Signal
+  instrumentType?: 'BINARY' | 'PERP'
 }
 
-export function SignalDisplay({ signal }: SignalDisplayProps) {
-  const label = directionLabel(signal.direction)
+export function SignalDisplay({ signal, instrumentType = 'BINARY' }: SignalDisplayProps) {
+  const label =
+    instrumentType === 'PERP'
+      ? signal.direction > 0
+        ? 'LONG'
+        : signal.direction < 0
+          ? 'SHORT'
+          : 'FLAT'
+      : directionLabel(signal.direction)
   const sizePercent = signal.sizeBps / 100
 
-  const Icon = label === 'LONG' ? ArrowUp : label === 'SHORT' ? ArrowDown : Minus
+  const Icon = label === 'UP' ? ArrowUp : label === 'DOWN' ? ArrowDown : Minus
 
   return (
     <Card className="border-accent/30">
@@ -41,24 +49,41 @@ export function SignalDisplay({ signal }: SignalDisplayProps) {
 
         <div className="mt-6 grid grid-cols-3 gap-4">
           <div className="rounded-lg bg-secondary p-3">
-            <p className="text-xs text-muted-foreground">Stop Price</p>
-            <p className="mt-1 font-mono text-sm text-foreground">${formatStopPrice(signal.stopPrice)}</p>
+            <p className="text-xs text-muted-foreground">
+              {instrumentType === 'PERP' ? 'Pool' : 'Market'}
+            </p>
+            <p className="mt-1 font-mono text-sm text-foreground">
+              {instrumentType === 'PERP'
+                ? `0x${signal.marketId.slice(-40)}`
+                : formatMarketId(signal.marketId)}
+            </p>
+          </div>
+          <div className="rounded-lg bg-secondary p-3">
+            <p className="text-xs text-muted-foreground">
+              {instrumentType === 'PERP' ? 'Limit / Mark' : 'Limit Price'}
+            </p>
+            <p className="mt-1 font-mono text-sm text-foreground">
+              {instrumentType === 'PERP'
+                ? (Number(signal.limitPrice) / 1e18).toFixed(4)
+                : formatLimitPrice(signal.limitPrice)}
+            </p>
           </div>
           <div className="rounded-lg bg-secondary p-3">
             <p className="text-xs text-muted-foreground">Epoch</p>
             <p className="mt-1 font-mono text-sm text-foreground">#{signal.epoch}</p>
           </div>
-          <div className="rounded-lg bg-secondary p-3">
-            <p className="text-xs text-muted-foreground">Size</p>
-            <div className="mt-1.5 h-1.5 rounded-full bg-muted">
-              <div
-                className={cn(
-                  'h-full rounded-full transition-all',
-                  label === 'LONG' ? 'bg-success' : label === 'SHORT' ? 'bg-destructive' : 'bg-warning'
-                )}
-                style={{ width: `${Math.min(sizePercent, 100)}%` }}
-              />
-            </div>
+        </div>
+
+        <div className="mt-4 rounded-lg bg-secondary p-3">
+          <p className="text-xs text-muted-foreground">Size</p>
+          <div className="mt-1.5 h-1.5 rounded-full bg-muted">
+            <div
+              className={cn(
+                'h-full rounded-full transition-all',
+                label === 'UP' ? 'bg-success' : label === 'DOWN' ? 'bg-destructive' : 'bg-warning'
+              )}
+              style={{ width: `${Math.min(sizePercent, 100)}%` }}
+            />
           </div>
         </div>
 

@@ -1,7 +1,8 @@
 export interface Signal {
   direction: number
   sizeBps: number
-  stopPrice: bigint
+  marketId: string
+  limitPrice: bigint
   reasoningHash: string
   epoch: number
   timestamp: number
@@ -28,6 +29,7 @@ export interface VaultStats {
 }
 
 export type PublisherKind = 'native' | 'custom'
+export type VaultSourceType = 'agent' | 'wallet'
 
 export interface VaultInfo {
   address: string
@@ -40,6 +42,9 @@ export interface VaultInfo {
   followerCount: number
   createdAt: number
   publisherKind?: PublisherKind
+  sourceType?: VaultSourceType
+  sourceWallet?: string
+  eventRouter?: string
 }
 
 export interface TradeRecord {
