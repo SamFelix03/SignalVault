@@ -7,7 +7,11 @@ import {
   toBytes,
 } from 'viem';
 import { publicClient, getWalletClient } from '../config/chains';
-import { REACTIVITY_PRECOMPILE } from '../config/constants';
+import {
+  DEFAULT_HANDLER_GAS_LIMIT,
+  MIRROR_HANDLER_GAS_LIMIT,
+  REACTIVITY_PRECOMPILE,
+} from '../config/constants';
 import { logger } from '../utils/logger';
 
 const CTX = 'ReactivitySubscriptions';
@@ -109,7 +113,7 @@ export async function registerReactivitySubscription(
     handlerFunctionSelector: ON_EVENT_SELECTOR,
     priorityFeePerGas: 0n,
     maxFeePerGas: 20_000_000_000n,
-    gasLimit: 10_000_000n,
+    gasLimit: params.name === 'MirrorReactor' ? BigInt(MIRROR_HANDLER_GAS_LIMIT) : BigInt(DEFAULT_HANDLER_GAS_LIMIT),
     isGuaranteed: false,
     isCoalesced: false,
   };

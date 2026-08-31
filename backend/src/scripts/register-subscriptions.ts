@@ -12,14 +12,14 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { somniaTestnet } from '../config/chains';
-import { VAULT_FACTORY_ADDRESS, RPC_URL } from '../config/constants';
+import { VAULT_FACTORY_ADDRESS, RPC_URL, MIRROR_HANDLER_GAS_LIMIT, DEFAULT_HANDLER_GAS_LIMIT } from '../config/constants';
 
 const REACTIVITY_PRECOMPILE = '0x0000000000000000000000000000000000000100' as Address;
 const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000' as Hex;
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as Address;
 
 const TOPICS = {
-  SignalUpdated: keccak256(toBytes('SignalUpdated(bytes32,int8,uint16,uint256,string,bytes32)')),
+  SignalUpdated: keccak256(toBytes('SignalUpdated(bytes32,int8,uint16,bytes32,uint256,string,bytes32)')),
   TradeSettled: keccak256(toBytes('TradeSettled(uint256,int8,int256,uint256,uint256)')),
   DrawdownUpdated: keccak256(toBytes('DrawdownUpdated(address,uint256,uint256)')),
   EpochTick: keccak256(toBytes('EpochTick(uint64,uint64)')),
@@ -105,14 +105,19 @@ async function main() {
       handler: mirrorReactor,
       topic0: TOPICS.SignalUpdated,
       emitter: vault,
+      gasLimit: MIRROR_HANDLER_GAS_LIMIT,
     });
 
-    await registerSubscription(walletClient, publicClient, {
-      name: 'StopReactor',
-      handler: stopReactor,
-      topic0: TOPICS.SignalUpdated,
-      emitter: vault,
-    });
+    if (stopReactor !== ZERO_ADDR) {
+      await registerSubscription(walletClient, publicClient, {
+        name: 'StopReactor',
+        handler: stopReactor,
+        topic0: TOPICS.SignalUpdated,
+        emitter: vault,
+      });
+    } else {
+      console.log('  Skipping StopReactor (not deployed for event-contract vault)');
+    }
 
     await registerSubscription(walletClient, publicClient, {
       name: 'DrawdownGuard',
@@ -135,9 +140,11 @@ async function main() {
 async function registerSubscription(
   walletClient: any,
   publicClient: any,
-  params: { name: string; handler: Address; topic0: Hex; emitter: Address }
+  params: { name: string; handler: Address; topic0: Hex; emitter: Address; gasLimit?: number }
 ) {
   console.log(`  Registering ${params.name}...`);
+
+  const gasLimit = params.gasLimit ?? DEFAULT_HANDLER_GAS_LIMIT;
 
   const structValue = {
     eventTopics: [params.topic0, ZERO_BYTES32, ZERO_BYTES32, ZERO_BYTES32],
@@ -148,7 +155,7 @@ async function registerSubscription(
     handlerFunctionSelector: ON_EVENT_SELECTOR,
     priorityFeePerGas: 0n,
     maxFeePerGas: 20000000000n,
-    gasLimit: 10000000n,
+    gasLimit: BigInt(gasLimit),
     isGuaranteed: false,
     isCoalesced: false,
   };

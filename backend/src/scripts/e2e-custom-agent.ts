@@ -33,11 +33,13 @@ async function main() {
   if (!isCustom) throw new Error('Vault is not a custom agent vault')
 
   const reason = `E2E test ${Date.now()}`
+  const marketId = (`0x${'0'.repeat(64)}`) as `0x${string}`
+  const limitPrice = 450_000n
   const hash = await walletClient.writeContract({
     address: orchestrator,
     abi: ExternalSignalPublisherABI,
     functionName: 'publish',
-    args: [1, 1200, 320000n, reason],
+    args: [1, 1200, marketId, limitPrice, reason],
     account,
     chain: somniaTestnet,
   })
@@ -54,7 +56,8 @@ async function main() {
   console.log('current signal:', {
     direction: signal.direction,
     sizeBps: signal.sizeBps,
-    stopPrice: signal.stopPrice.toString(),
+    marketId: signal.marketId,
+    limitPrice: signal.limitPrice.toString(),
     epoch: signal.epoch.toString(),
   })
 
