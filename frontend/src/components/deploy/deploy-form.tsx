@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, type ComponentType, type ReactNode } from 'react'
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi'
-import { parseEther, type Hex } from 'viem'
-import { Bot, Gauge, Percent, Wallet, Plug, Sparkles } from 'lucide-react'
+import { parseEther, parseUnits, isAddress, type Hex, type Address } from 'viem'
+import { TUSDC_DECIMALS } from '@/lib/constants'
+import { Bot, Gauge, Percent, Wallet, Plug, Sparkles, Eye } from 'lucide-react'
 import { vaultFactoryConfig } from '@/lib/contracts'
 import { TxStatus } from '@/components/common/tx-status'
 import { PromptPreview } from './prompt-preview'
@@ -24,6 +25,8 @@ import { cn } from '@/lib/utils'
 
 type DeployPhase = 'form' | 'deploying' | 'resolving' | 'setup' | 'done'
 type AgentType = 'native' | 'custom'
+type VaultSourceMode = 'agent' | 'wallet'
+type VaultInstrumentType = 'BINARY' | 'PERP'
 
 function FormSection({
   step,
@@ -53,6 +56,98 @@ function FormSection({
         </div>
       </div>
       <div className="pl-11">{children}</div>
+    </div>
+  )
+}
+
+function InstrumentChoice({
+  value,
+  onChange,
+}: {
+  value: VaultInstrumentType
+  onChange: (v: VaultInstrumentType) => void
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <button
+        type="button"
+        onClick={() => onChange('BINARY')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          value === 'BINARY'
+            ? 'border-accent bg-accent/10'
+            : 'border-border/60 bg-secondary/20 hover:border-muted-foreground/30',
+        )}
+      >
+        <span className="text-sm font-semibold">Event contracts</span>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Timed UP/DOWN windows, tUSDC collateral, capped loss per trade.
+        </p>
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('PERP')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          value === 'PERP'
+            ? 'border-accent bg-accent/10'
+            : 'border-border/60 bg-secondary/20 hover:border-muted-foreground/30',
+        )}
+      >
+        <span className="text-sm font-semibold">Perps</span>
+        <p className="mt-2 text-xs text-muted-foreground">
+          LONG/SHORT leverage on dreamDEX perps — USDso margin, liquidation risk.
+        </p>
+      </button>
+    </div>
+  )
+}
+
+function SourceModeChoice({
+  value,
+  onChange,
+}: {
+  value: VaultSourceMode
+  onChange: (v: VaultSourceMode) => void
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <button
+        type="button"
+        onClick={() => onChange('agent')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          value === 'agent'
+            ? 'border-accent bg-accent/10'
+            : 'border-border/60 bg-secondary/20 hover:border-muted-foreground/30',
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-accent" />
+          <span className="text-sm font-semibold">AI / custom agent</span>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Signals from an on-chain AI pipeline or your bot via signalvault-sdk.
+        </p>
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('wallet')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          value === 'wallet'
+            ? 'border-accent bg-accent/10'
+            : 'border-border/60 bg-secondary/20 hover:border-muted-foreground/30',
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <Eye className="h-4 w-4 text-accent" />
+          <span className="text-sm font-semibold">Wallet-tracked</span>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Mirror your real Event Contracts trades — followers copy your wallet fills.
+        </p>
+      </button>
     </div>
   )
 }
@@ -108,13 +203,16 @@ function AgentTypeChoice({
 
 export function DeployForm() {
   const { address } = useAccount()
+  const [sourceMode, setSourceMode] = useState<VaultSourceMode>('agent')
+  const [instrumentType, setInstrumentType] = useState<VaultInstrumentType>('BINARY')
   const [agentType, setAgentType] = useState<AgentType>('native')
+  const [sourceWallet, setSourceWallet] = useState('')
   const [vaultName, setVaultName] = useState('')
   const [strategyPrompt, setStrategyPrompt] = useState('')
   const [description, setDescription] = useState('')
   const [feeBps, setFeeBps] = useState(500)
   const [maxDrawdownBps, setMaxDrawdownBps] = useState(2000)
-  const [signalPriceSvt, setSignalPriceSvt] = useState('0')
+  const [signalPriceTusdc, setSignalPriceTusdc] = useState('0')
   const [deposit, setDeposit] = useState('1')
 
   const [phase, setPhase] = useState<DeployPhase>('form')
@@ -122,7 +220,8 @@ export function DeployForm() {
   const [resolveError, setResolveError] = useState<string | null>(null)
   const setupStarted = useRef(false)
 
-  const isCustom = agentType === 'custom'
+  const isWalletVault = sourceMode === 'wallet'
+  const isCustom = !isWalletVault && agentType === 'custom'
 
   const { writeContract, data: txHash, isPending, error: writeError, reset } = useWriteContract()
   const { isLoading: isConfirming, isSuccess: deploySuccess } = useWaitForTransactionReceipt({
@@ -130,37 +229,68 @@ export function DeployForm() {
   })
 
   const fullStrategyPrompt = vaultName
-    ? isCustom
+    ? isWalletVault || isCustom
       ? `${vaultName}: ${description}`
       : `${vaultName}: ${strategyPrompt}`
-    : isCustom
+    : isWalletVault || isCustom
       ? description
       : strategyPrompt
 
   function handleDeploy() {
     if (!vaultName) return
-    if (isCustom && !description) return
-    if (!isCustom && !strategyPrompt) return
+    if (isWalletVault) {
+      if (!description || !isAddress(sourceWallet)) return
+    } else if (isCustom) {
+      if (!description) return
+    } else if (!strategyPrompt) {
+      return
+    }
 
     setPhase('deploying')
     setResolveError(null)
     setupStarted.current = false
 
-    const signalPriceWei = parseEther(signalPriceSvt || '0')
+    const signalPriceWei = parseUnits(signalPriceTusdc || '0', TUSDC_DECIMALS)
+    const instrument = instrumentType === 'PERP' ? 1 : 0
 
-    if (isCustom) {
+    if (isWalletVault) {
       writeContract({
         ...vaultFactoryConfig,
-        functionName: 'deployCustomAgentVault',
-        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps), signalPriceWei],
+        functionName: 'deployWalletVault',
+        args: [sourceWallet as Address, fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps), signalPriceWei, instrument],
+      })
+    } else if (isCustom) {
+      writeContract({
+        ...vaultFactoryConfig,
+        functionName: 'deployAgentVault',
+        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps), signalPriceWei, instrument],
       })
     } else {
       writeContract({
         ...vaultFactoryConfig,
         functionName: 'deployVault',
-        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps), signalPriceWei],
+        args: [fullStrategyPrompt, feeBps, BigInt(maxDrawdownBps), signalPriceWei, instrument],
         value: parseEther(deposit),
       })
+    }
+  }
+
+  async function retryResolve() {
+    if (!txHash) return
+    setResolveError(null)
+    setPhase('resolving')
+    try {
+      const resolved = await resolveDeployTx(txHash as Hex)
+      setDeployment(resolved)
+      setPhase('setup')
+    } catch (err) {
+      console.error('[SignalVault] Deploy resolve failed', {
+        txHash,
+        error: err instanceof Error ? err.message : err,
+        hint: 'Restart backend (npm run dev) if you recently updated vault-setup-service.ts',
+      })
+      setResolveError(err instanceof Error ? err.message : 'Post-deploy setup failed')
+      setPhase('form')
     }
   }
 
@@ -175,6 +305,11 @@ export function DeployForm() {
         setDeployment(resolved)
         setPhase('setup')
       } catch (err) {
+        console.error('[SignalVault] Deploy resolve failed', {
+          txHash,
+          error: err instanceof Error ? err.message : err,
+          hint: 'Check backend logs for VaultSetupService — paste txHash + log block',
+        })
         setResolveError(err instanceof Error ? err.message : 'Post-deploy setup failed')
         setPhase('form')
         setupStarted.current = false
@@ -194,7 +329,15 @@ export function DeployForm() {
           ? 'error'
           : 'idle'
 
-  const progress = isCustom
+  const progress = isWalletVault
+    ? vaultName
+      ? description && isAddress(sourceWallet)
+        ? feeBps > 0
+          ? 100
+          : 75
+        : 50
+      : 0
+    : isCustom
     ? vaultName
       ? description
         ? feeBps > 0
@@ -259,6 +402,8 @@ export function DeployForm() {
           deployTxHash={txHash as Hex}
           vaultName={vaultName}
           isCustomAgent={isCustom}
+          isWalletVault={isWalletVault}
+          isPerpVault={instrumentType === 'PERP'}
         />
       </div>
     )
@@ -270,7 +415,16 @@ export function DeployForm() {
 
       {resolveError && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {resolveError}
+          <p>{resolveError}</p>
+          {txHash && deploySuccess && (
+            <button
+              type="button"
+              onClick={() => void retryResolve()}
+              className="mt-2 text-xs font-medium underline underline-offset-2 hover:no-underline"
+            >
+              Retry setup (tx already on-chain)
+            </button>
+          )}
         </div>
       )}
 
@@ -286,25 +440,53 @@ export function DeployForm() {
             <CardHeader>
               <CardTitle className="text-base">Vault Configuration</CardTitle>
               <CardDescription>
-                {isCustom
-                  ? 'Deploy a vault for your bot — setup skips the AI pipeline'
-                  : 'Define how your agent trades — setup runs automatically after deploy'}
+                {isWalletVault
+                  ? 'Track a wallet’s Event Contracts trades — no AI pipeline'
+                  : isCustom
+                    ? 'Deploy a vault for your bot — setup skips the AI pipeline'
+                    : 'Define how your agent trades — setup runs automatically after deploy'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-8">
               <FormSection
                 step={1}
-                title="Agent Type"
-                description="Native on-chain AI or bring your own bot via the SDK"
-                icon={isCustom ? Plug : Sparkles}
+                title="Instrument"
+                description="Event contracts (binary) or perps — fixed for the life of the vault"
+                icon={Gauge}
               >
-                <AgentTypeChoice value={agentType} onChange={setAgentType} />
+                <InstrumentChoice value={instrumentType} onChange={setInstrumentType} />
               </FormSection>
 
               <Separator />
 
               <FormSection
                 step={2}
+                title="Vault Source"
+                description="AI agent signals or mirror a real trading wallet"
+                icon={isWalletVault ? Eye : isCustom ? Plug : Sparkles}
+              >
+                <SourceModeChoice value={sourceMode} onChange={setSourceMode} />
+              </FormSection>
+
+              {!isWalletVault && (
+                <>
+                  <Separator />
+
+                  <FormSection
+                    step={2}
+                    title="Agent Type"
+                    description="Native on-chain AI or bring your own bot via the SDK"
+                    icon={isCustom ? Plug : Sparkles}
+                  >
+                    <AgentTypeChoice value={agentType} onChange={setAgentType} />
+                  </FormSection>
+                </>
+              )}
+
+              <Separator />
+
+              <FormSection
+                step={isWalletVault ? 2 : 3}
                 title="Vault Name"
                 description="Shown on the leaderboard and prepended to your on-chain description"
                 icon={Bot}
@@ -320,9 +502,42 @@ export function DeployForm() {
 
               <Separator />
 
-              {isCustom ? (
+              {isWalletVault ? (
+                <>
+                  <Separator />
+                  <FormSection
+                    step={3}
+                    title="Source Wallet"
+                    description="Event Contracts fills on this wallet become vault signals"
+                    icon={Eye}
+                  >
+                    <Input
+                      id="sourceWallet"
+                      value={sourceWallet}
+                      onChange={e => setSourceWallet(e.target.value)}
+                      placeholder="0x… wallet to track"
+                      className="font-mono border-border/80 bg-secondary/30 focus:bg-background"
+                    />
+                  </FormSection>
+                  <Separator />
+                  <FormSection
+                    step={4}
+                    title="Description"
+                    description="Brief summary for followers — your wallet history is the proof"
+                    icon={Bot}
+                  >
+                    <Input
+                      id="description"
+                      value={description}
+                      onChange={e => setDescription(e.target.value)}
+                      placeholder="e.g. BTC/ETH 15m event contracts — discretionary momentum"
+                      className="border-border/80 bg-secondary/30 focus:bg-background"
+                    />
+                  </FormSection>
+                </>
+              ) : isCustom ? (
                 <FormSection
-                  step={3}
+                  step={4}
                   title="One-line Description"
                   description="Brief strategy summary for followers — your bot logic stays off-chain"
                   icon={Bot}
@@ -337,7 +552,7 @@ export function DeployForm() {
                 </FormSection>
               ) : (
                 <FormSection
-                  step={3}
+                  step={4}
                   title="Strategy Prompt"
                   description="The agent reads this every epoch to decide trades"
                   icon={Bot}
@@ -356,7 +571,7 @@ export function DeployForm() {
               <Separator />
 
               <FormSection
-                step={4}
+                step={isWalletVault ? 5 : 5}
                 title="Risk Parameters"
                 description="Performance fee and drawdown guard thresholds"
                 icon={Percent}
@@ -387,28 +602,28 @@ export function DeployForm() {
                   </div>
 
                   <div className="space-y-2 rounded-lg border border-border/60 bg-secondary/20 p-4">
-                    <Label htmlFor="signalPrice">Signal price (SVT per signal)</Label>
+                    <Label htmlFor="signalPrice">Signal price (tUSDC per signal)</Label>
                     <Input
                       id="signalPrice"
                       type="number"
                       min="0"
                       step="0.01"
-                      value={signalPriceSvt}
-                      onChange={e => setSignalPriceSvt(e.target.value)}
+                      value={signalPriceTusdc}
+                      onChange={e => setSignalPriceTusdc(e.target.value)}
                       className="max-w-xs font-mono"
                     />
                     <p className="text-[10px] text-muted-foreground">
-                      Set to 0 for free signals. Followers approve SVT spending when subscribing.
+                      Set to 0 for free signals. Followers pay in tUSDC — same token used for mirror trades.
                     </p>
                   </div>
                 </div>
               </FormSection>
 
-              {!isCustom && (
+              {!isCustom && !isWalletVault && (
                 <>
                   <Separator />
                   <FormSection
-                    step={5}
+                    step={6}
                     title="Agent Funding"
                     description="STT deposit — split between orchestrator and epoch cron"
                     icon={Gauge}
@@ -430,7 +645,11 @@ export function DeployForm() {
                 onClick={handleDeploy}
                 disabled={
                   !vaultName ||
-                  (isCustom ? !description : !strategyPrompt) ||
+                  (isWalletVault
+                    ? !description || !isAddress(sourceWallet)
+                    : isCustom
+                      ? !description
+                      : !strategyPrompt) ||
                   isPending ||
                   isConfirming ||
                   phase === 'deploying'
@@ -441,23 +660,38 @@ export function DeployForm() {
                 {isPending
                   ? 'Confirm in Wallet...'
                   : isConfirming
-                    ? 'Deploying 8 Contracts...'
-                    : isCustom
-                      ? 'Deploy Custom Agent Vault'
-                      : 'Deploy Vault'}
+                    ? 'Deploying contracts...'
+                    : isWalletVault
+                      ? 'Deploy Wallet Vault'
+                      : isCustom
+                        ? 'Deploy Custom Agent Vault'
+                        : 'Deploy Vault'}
               </Button>
 
               <p className="text-center text-[11px] text-muted-foreground">
-                {isCustom
-                  ? 'After deploy you\'ll confirm ~4 subscription transactions, then copy the SDK snippet to connect your bot.'
-                  : 'After deploy you\'ll confirm ~6 more transactions in MetaMask — subscriptions, epoch cron funding, and first pipeline run.'}
+                {isWalletVault
+                  ? 'After deploy you\'ll confirm MirrorReactor + DrawdownGuard subscriptions. Signals mirror from your tracked wallet.'
+                  : isCustom
+                    ? 'After deploy you\'ll confirm ~2 subscription transactions, then copy the SDK snippet to connect your bot.'
+                    : 'After deploy you\'ll confirm ~4 more transactions in MetaMask — subscriptions, epoch cron funding, and first pipeline run.'}
               </p>
             </CardContent>
           </Card>
         </div>
 
         <div className="space-y-4 xl:col-span-2 xl:sticky xl:top-24 xl:self-start">
-          {isCustom ? (
+          {isWalletVault ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Wallet-tracked vault</CardTitle>
+                <CardDescription>
+                  Followers mirror your real Event Contracts fills from{' '}
+                  <code className="font-mono text-xs">{sourceWallet || 'your wallet'}</code>.
+                  Make sure that wallet trades on Somnia Markets testnet.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          ) : isCustom ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Custom agent vault</CardTitle>

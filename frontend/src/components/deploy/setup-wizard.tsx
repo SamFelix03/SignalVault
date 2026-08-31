@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { type Hex, parseEther, parseUnits } from 'viem'
+import { type Hex, parseUnits } from 'viem'
+import { TUSDC_DECIMALS } from '@/lib/constants'
 import { useWriteContract, useWaitForTransactionReceipt, useWalletClient, usePublicClient } from 'wagmi'
 import {
   CheckCircle2,
@@ -43,6 +44,7 @@ import { Progress } from '@/components/ui/progress'
 
 const STEP_ICONS: Record<string, typeof Rocket> = {
   index: Zap,
+  'perp-router': Wallet,
   'mirror-sub': Radio,
   'stop-sub': Radio,
   'drawdown-sub': Radio,
@@ -56,16 +58,25 @@ interface SetupWizardProps {
   deployTxHash: Hex
   vaultName: string
   isCustomAgent?: boolean
+  isWalletVault?: boolean
+  isPerpVault?: boolean
 }
 
-export function SetupWizard({ deployment, deployTxHash, vaultName, isCustomAgent = false }: SetupWizardProps) {
+export function SetupWizard({
+  deployment,
+  deployTxHash,
+  vaultName,
+  isCustomAgent = false,
+  isWalletVault = false,
+  isPerpVault = false,
+}: SetupWizardProps) {
   const router = useRouter()
   const { data: walletClient } = useWalletClient()
   const publicClient = usePublicClient()
 
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle')
   const [setupError, setSetupError] = useState<string | null>(null)
-  const [steps, setSteps] = useState<SetupStep[]>(() => createInitialSetupSteps(isCustomAgent))
+  const [steps, setSteps] = useState<SetupStep[]>(() => createInitialSetupSteps(isCustomAgent, isWalletVault, isPerpVault))
   const [logs, setLogs] = useState<SetupLogEntry[]>([])
   const [transactions, setTransactions] = useState<SetupTransaction[]>([])
   const [subscribeDone, setSubscribeDone] = useState(false)
@@ -133,6 +144,8 @@ export function SetupWizard({ deployment, deployTxHash, vaultName, isCustomAgent
           })
         },
         customAgent: isCustomAgent,
+        sourceType: isWalletVault ? 'wallet' : 'agent',
+        isPerpVault,
       })
 
       if (result.ok) {
@@ -144,7 +157,7 @@ export function SetupWizard({ deployment, deployTxHash, vaultName, isCustomAgent
     }
 
     void run()
-  }, [walletClient, publicClient, deployment])
+  }, [walletClient, publicClient, deployment, isCustomAgent, isWalletVault])
 
   useEffect(() => {
     if (subSuccess) setSubscribeDone(true)
@@ -188,9 +201,9 @@ export function SetupWizard({ deployment, deployTxHash, vaultName, isCustomAgent
       functionName: 'subscribe',
       args: [{
         riskPct: 1000,
-        maxPositionSize: parseEther('0.02'),
+        maxPositionSize: parseUnits('100', TUSDC_DECIMALS),
         maxSlippageBps: 300,
-        stopLossBuffer: parseUnits('1', 18),
+        stopLossBuffer: parseUnits('0', TUSDC_DECIMALS),
         active: true,
       }],
     })

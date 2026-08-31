@@ -16,8 +16,10 @@ import {
   encodeReactivitySubscriptionCalldata,
   type SubscriptionTarget,
 } from '@/lib/reactivity-subscriptions'
+import type { VaultSourceType } from '@/types/vault'
 import { REACTIVITY_PRECOMPILE } from '@/lib/constants'
 import { API_URL } from '@/lib/contracts'
+import { fetchPerpRouterStatus } from '@/lib/mirror-wallet'
 import type {
   SetupLogEntry,
   SetupStep,
@@ -36,6 +38,7 @@ export interface VaultDeployment {
 
 export type SetupStepId =
   | 'index'
+  | 'perp-router'
   | 'mirror-sub'
   | 'stop-sub'
   | 'drawdown-sub'
@@ -45,6 +48,7 @@ export type SetupStepId =
 
 const STEP_DEFS: { id: SetupStepId; label: string }[] = [
   { id: 'index', label: 'Index vault metadata' },
+  { id: 'perp-router', label: 'Enable perp mirror pulls' },
   { id: 'mirror-sub', label: 'Register MirrorReactor subscription' },
   { id: 'stop-sub', label: 'Register StopReactor subscription' },
   { id: 'drawdown-sub', label: 'Register DrawdownGuard subscription' },
@@ -60,9 +64,19 @@ const STEP_BY_SUB: Record<string, SetupStepId> = {
   EpochCron: 'epoch-sub',
 }
 
-export function createInitialSetupSteps(customAgent = false): SetupStep[] {
+export function createInitialSetupSteps(
+  customAgent = false,
+  walletVault = false,
+  isPerpVault = false,
+): SetupStep[] {
   return STEP_DEFS.map((d) => {
-    if (customAgent && (d.id === 'epoch-sub' || d.id === 'fund-cron' || d.id === 'trigger-pipeline')) {
+    if (d.id === 'stop-sub') {
+      return { id: d.id, label: d.label, status: 'skipped' as const }
+    }
+    if (d.id === 'perp-router' && !isPerpVault) {
+      return { id: d.id, label: d.label, status: 'skipped' as const }
+    }
+    if ((customAgent || walletVault) && (d.id === 'epoch-sub' || d.id === 'fund-cron' || d.id === 'trigger-pipeline')) {
       return { id: d.id, label: d.label, status: 'skipped' as const }
     }
     return { id: d.id, label: d.label, status: 'pending' as const }
@@ -106,6 +120,13 @@ export type SetupWalletClient = {
     gas?: bigint
     args?: readonly unknown[]
   }) => Promise<Hex>
+  deployContract?: (args: {
+    account: Account
+    chain: Chain
+    abi: readonly unknown[]
+    bytecode: Hex
+    args?: readonly unknown[]
+  }) => Promise<Hex>
 }
 
 export type SetupPublicClient = {
@@ -123,6 +144,8 @@ export async function runWalletVaultSetup({
   fundEpochCron = true,
   triggerPipeline = true,
   customAgent = false,
+  sourceType = 'agent' as VaultSourceType,
+  isPerpVault = false,
 }: {
   deployment: VaultDeployment
   walletClient: SetupWalletClient
@@ -134,6 +157,8 @@ export async function runWalletVaultSetup({
   fundEpochCron?: boolean
   triggerPipeline?: boolean
   customAgent?: boolean
+  sourceType?: VaultSourceType
+  isPerpVault?: boolean
 }): Promise<{ ok: boolean; error?: string }> {
   const vault = deployment.vaultAddress
 
@@ -150,18 +175,78 @@ export async function runWalletVaultSetup({
     return { ok: false, error: msg }
   }
 
-  const allTargets = buildVaultSubscriptionTargets({
-    vault,
-    mirrorReactor: deployment.mirrorReactor,
-    stopReactor: deployment.stopReactor,
-    drawdownGuard: deployment.drawdownGuard,
-    epochCron: deployment.epochCron,
-    performanceLedger: deployment.performanceLedger,
-  })
+  if (isPerpVault) {
+    onStep('perp-router', 'running')
+    log(onLog, 'info', 'Checking perp execution router…', 'perp-router')
+    try {
+      const status = await fetchPerpRouterStatus(vault)
+      if (!status.needsUpgrade) {
+        onStep('perp-router', 'skipped')
+        log(onLog, 'success', 'Perp router already supports auto-pull mirrors', 'perp-router')
+      } else {
+        if (!status.deployBytecode || !walletClient.deployContract) {
+          throw new Error('Perp router upgrade unavailable — restart backend after contracts build')
+        }
+        log(onLog, 'info', 'Deploying updated PerpRouter — confirm in wallet…', 'perp-router')
+        const deployHash = await walletClient.deployContract({
+          account: walletClient.account,
+          chain: walletClient.chain,
+          abi: [{ type: 'constructor', inputs: [{ type: 'address' }, { type: 'address' }], stateMutability: 'nonpayable' }],
+          bytecode: status.deployBytecode as Hex,
+          args: [deployment.mirrorReactor, status.marginBank],
+        })
+        onTransaction({ step: 'perp-router', label: 'Deploy PerpRouter', txHash: deployHash, status: 'pending' })
+        const deployReceipt = (await publicClient.waitForTransactionReceipt({ hash: deployHash })) as {
+          status: string
+          contractAddress?: Address
+        }
+        if (deployReceipt.status !== 'success') throw new Error('PerpRouter deploy reverted')
+        const newRouter = deployReceipt.contractAddress
+        if (!newRouter) throw new Error('PerpRouter deploy missing address')
 
-  const targets: SubscriptionTarget[] = customAgent
-    ? allTargets.filter((t) => t.name !== 'EpochCron')
-    : allTargets
+        log(onLog, 'info', 'Pointing vault at new PerpRouter…', 'perp-router')
+        const setHash = await walletClient.writeContract({
+          account: walletClient.account,
+          chain: walletClient.chain,
+          address: vault,
+          abi: [{ type: 'function', name: 'setEventRouter', inputs: [{ type: 'address' }], outputs: [], stateMutability: 'nonpayable' }],
+          functionName: 'setEventRouter',
+          args: [newRouter],
+        })
+        onTransaction({ step: 'perp-router', label: 'Update event router', txHash: setHash, status: 'pending' })
+        const setReceipt = await publicClient.waitForTransactionReceipt({ hash: setHash })
+        if (setReceipt.status !== 'success') throw new Error('setEventRouter reverted')
+
+        onTransaction({ step: 'perp-router', label: 'Perp mirror pulls', txHash: setHash, status: 'confirmed' })
+        onStep('perp-router', 'completed', { txHash: setHash })
+        log(onLog, 'success', `Perp auto-pull router live at ${newRouter}`, 'perp-router')
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      onStep('perp-router', 'failed', { error: msg })
+      log(onLog, 'error', `Perp router setup failed: ${msg}`, 'perp-router')
+      return { ok: false, error: msg }
+    }
+  } else {
+    onStep('perp-router', 'skipped')
+  }
+
+  const allTargets = buildVaultSubscriptionTargets(
+    {
+      vault,
+      mirrorReactor: deployment.mirrorReactor,
+      stopReactor: deployment.stopReactor,
+      drawdownGuard: deployment.drawdownGuard,
+      epochCron: deployment.epochCron,
+      performanceLedger: deployment.performanceLedger,
+    },
+    { sourceType },
+  )
+
+  const targets: SubscriptionTarget[] =
+    customAgent || sourceType === 'wallet'
+      ? allTargets.filter((t) => t.name !== 'EpochCron')
+      : allTargets
 
   for (const target of targets) {
     const stepId = STEP_BY_SUB[target.name]
@@ -197,11 +282,18 @@ export async function runWalletVaultSetup({
     }
   }
 
-  if (customAgent) {
+  if (customAgent || sourceType === 'wallet') {
     onStep('epoch-sub', 'skipped')
     onStep('fund-cron', 'skipped')
     onStep('trigger-pipeline', 'skipped')
-    log(onLog, 'success', 'Custom agent vault ready — connect your bot via signalvault-sdk', 'index')
+    log(
+      onLog,
+      'success',
+      sourceType === 'wallet'
+        ? 'Wallet-tracked vault ready — signals mirror from your trading wallet'
+        : 'Custom agent vault ready — connect your bot via signalvault-sdk',
+      'index',
+    )
     return { ok: true }
   }
 
