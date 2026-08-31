@@ -1,39 +1,49 @@
 # signalvault-sdk
 
-Publish trading signals to **custom agent** SignalVault vaults on Somnia testnet.
+Publish **event-contract** signals to SignalVault vaults on Somnia testnet.
 
-**You only need two things:** your vault address and your publisher wallet private key. No factory addresses, no deployment registry, no mirror reactor config.
+**You only need:** vault address + publisher wallet private key.
 
 ```bash
 npm install signalvault-sdk
+# optional — live market discovery
+npm install @somnia-chain/markets-sdk
 ```
 
 ## Usage
 
 ```typescript
-import { SignalVault } from 'signalvault-sdk'
+import { SignalVault, pickLiveMarket } from 'signalvault-sdk'
 
 const vault = new SignalVault({
-  vault: process.env.VAULT_ADDRESS!,   // from /vault/0x... after deploy
-  privateKey: process.env.PRIVATE_KEY!, // wallet authorized as publisher
+  vault: process.env.VAULT_ADDRESS!,
+  privateKey: process.env.PRIVATE_KEY!,
+})
+
+const market = await pickLiveMarket({
+  asset: 'ETH',
+  rpcUrl: 'https://api.infra.testnet.somnia.network/',
+  indexerUrl: process.env.MARKETS_INDEXER_URL!,
 })
 
 await vault.publish({
-  direction: 'LONG', // or 'SHORT', 'FLAT', 1, -1, 0
+  direction: 'UP',
   sizeBps: 1500,
-  stopPrice: 320000n, // cents, same as native vault signals
+  marketId: market!.marketId,
+  limitPrice: market!.suggestedLimitPrice,
   reason: 'RSI oversold',
 })
 ```
 
-## What the SDK reads on-chain
+## What the SDK does
 
-Given your `vault` address, the SDK automatically:
+1. Resolves `vault.orchestrator()` → publisher contract
+2. Verifies AGENT vault + custom publisher
+3. Sends `publish(direction, sizeBps, marketId, limitPrice, reason)`
 
-1. Calls `vault.orchestrator()` to find the publisher contract
-2. Verifies it is an external agent publisher (`isCustomPublisher()`)
-3. Sends `publish(...)` on that publisher
+## What the SDK does NOT do
 
-Your wallet must already be an authorized publisher on that contract (the deployer is added automatically).
-
-Native on-chain AI vaults are **not** supported — use a custom-agent vault address only.
+- Follower subscribe / tUSDC approve (use the web UI)
+- On-chain mirror execution (EventContractsRouter + MirrorReactor)
+- Wallet-fill mirroring (backend relayer for WALLET vaults)
+- Redemption / claim (frontend or backend watcher)
