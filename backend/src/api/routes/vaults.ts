@@ -1,7 +1,10 @@
 import { Router, type Request, type Response } from 'express';
-import { type Address, getAddress } from 'viem';
+import { type Address, getAddress, isAddress, isHex } from 'viem';
 import { publicClient } from '../../config/chains';
+import { MARKETS_INDEXER_URL } from '../../config/constants';
+import { createMarketsExchange } from '../../services/markets-exchange';
 import { vaultIndexer } from '../../services/vault-indexer';
+import { resolveMirrorWallet, getPerpMirrorReadiness } from '../../services/mirror-wallet';
 import { PerformanceLedgerABI } from '../../abis/PerformanceLedger';
 import { StrategyVaultABI } from '../../abis/StrategyVault';
 import { logger } from '../../utils/logger';
@@ -52,12 +55,39 @@ vaultRouter.get('/', (_req: Request, res: Response) => {
     const vaults = vaultIndexer.getAllVaults();
     const serialized = vaults.map((v) => ({
       ...v,
+      sourceType: v.sourceType === 'WALLET' ? 'wallet' : 'agent',
       currentSignal: v.currentSignal ?? null,
     }));
     res.json({ vaults: serialized });
   } catch (err) {
     logger.error(CTX, 'Failed to list vaults', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+vaultRouter.get('/:address/mirror-wallet/:follower', async (req: Request, res: Response) => {
+  try {
+    const vault = getAddress(req.params.address as string) as Address;
+    const follower = getAddress(req.params.follower as string) as Address;
+    const result = await resolveMirrorWallet(vault, follower);
+    res.json(result);
+  } catch (err) {
+    logger.error(CTX, 'Failed to resolve mirror wallet', err);
+    res.status(500).json({ error: 'Failed to resolve mirror wallet' });
+  }
+});
+
+vaultRouter.get('/:address/perp-router-status', async (req: Request, res: Response) => {
+  try {
+    const vault = getAddress(req.params.address as string) as Address;
+    const status = await getPerpMirrorReadiness(vault);
+    res.json({
+      ...status,
+      deployBytecode: status.deployBytecode ?? undefined,
+    });
+  } catch (err) {
+    logger.error(CTX, 'Failed to check perp router', err);
+    res.status(500).json({ error: 'Failed to check perp router' });
   }
 });
 
@@ -71,6 +101,7 @@ vaultRouter.get('/:address', (req: Request, res: Response) => {
     }
     const serialized = {
       ...vault,
+      sourceType: vault.sourceType === 'WALLET' ? 'wallet' : 'agent',
       currentSignal: vault.currentSignal ?? null,
     };
     res.json({ vault: serialized });
@@ -105,14 +136,15 @@ vaultRouter.get('/:address/signals', async (req: Request, res: Response) => {
       functionName: 'getSignalHistory',
       args: [BigInt(offset), BigInt(limit)],
     }) as Array<{
-      direction: number; sizeBps: number; stopPrice: bigint;
+      direction: number; sizeBps: number; marketId: string; limitPrice: bigint;
       epoch: bigint; reasoningHash: string; reasoningSummary: string;
     }>;
 
     const signals = history.map((s) => ({
       direction: Number(s.direction),
       sizeBps: Number(s.sizeBps),
-      stopPrice: s.stopPrice.toString(),
+      marketId: s.marketId,
+      limitPrice: s.limitPrice.toString(),
       epoch: s.epoch.toString(),
       reasoningHash: s.reasoningHash,
       reasoningSummary: s.reasoningSummary,
@@ -264,5 +296,90 @@ vaultRouter.get('/:address/leaderboard', async (req: Request, res: Response) => 
   } catch (err) {
     logger.error(CTX, 'Failed to get leaderboard', err);
     res.status(500).json({ error: 'Failed to fetch leaderboard data' });
+  }
+});
+
+vaultRouter.post('/:address/wallet-source', (req: Request, res: Response) => {
+  try {
+    const address = getAddress(req.params.address as string) as Address;
+    const vault = vaultIndexer.getVault(address);
+    if (!vault) {
+      res.status(404).json({ error: 'Vault not found' });
+      return;
+    }
+    if (vault.sourceType !== 'WALLET') {
+      res.status(400).json({ error: 'Vault is not wallet-tracked' });
+      return;
+    }
+
+    const { sourceWallet, signature } = req.body as {
+      sourceWallet?: string;
+      signature?: string;
+    };
+
+    if (!sourceWallet || !isAddress(sourceWallet)) {
+      res.status(400).json({ error: 'Invalid sourceWallet address' });
+      return;
+    }
+    if (!signature || !isHex(signature) || signature.length < 130) {
+      res.status(400).json({ error: 'Invalid signature hex' });
+      return;
+    }
+
+    res.json({
+      vault: address,
+      sourceWallet: getAddress(sourceWallet),
+      signature,
+      status: 'accepted',
+      message: 'Wallet source registration received (signature validation stub)',
+    });
+  } catch (err) {
+    logger.error(CTX, 'Failed to register wallet source', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+vaultRouter.get('/:address/wallet-stats', async (req: Request, res: Response) => {
+  try {
+    const address = getAddress(req.params.address as string) as Address;
+    const vault = vaultIndexer.getVault(address);
+    if (!vault) {
+      res.status(404).json({ error: 'Vault not found' });
+      return;
+    }
+    if (vault.sourceType !== 'WALLET' || !vault.sourceWallet) {
+      res.status(400).json({ error: 'Vault is not wallet-tracked' });
+      return;
+    }
+
+    let tradeCount = 0;
+    let volumeQuote = 0n;
+    let wins = 0;
+    let losses = 0;
+
+    try {
+      const exchange = await createMarketsExchange();
+      const fills = await exchange.client.getUserFills(vault.sourceWallet, { limit: 200 });
+      tradeCount = fills.length;
+      for (const fill of fills) {
+        volumeQuote += BigInt(fill.quoteQuantity ?? 0);
+      }
+    } catch (err) {
+      logger.warn(CTX, 'Wallet stats fill fetch failed (markets-sdk may be missing)', err);
+    }
+
+    res.json({
+      vault: address,
+      sourceWallet: vault.sourceWallet,
+      tradeCount,
+      volumeQuote: volumeQuote.toString(),
+      winCount: wins,
+      lossCount: losses,
+      winRate: tradeCount > 0 ? ((wins / tradeCount) * 100).toFixed(1) : '0.0',
+      note: 'Win/loss requires resolved-market PnL scan — fill tape only for now',
+    });
+  } catch (err) {
+    logger.error(CTX, 'Failed to get wallet stats', err);
+    res.status(500).json({ error: 'Failed to fetch wallet stats' });
   }
 });

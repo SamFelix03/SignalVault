@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config({ override: true });
 
-import { createPublicClient, createWalletClient, http, defineChain } from 'viem';
+import { type Address, createPublicClient, createWalletClient, http, defineChain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
   CHAIN_ID, RPC_URL, WS_RPC_URL, EXPLORER_URL,
@@ -34,6 +34,25 @@ export const config = {
   agentRequesterAddress: AGENT_REQUESTER_ADDRESS,
   ethUsdOracle: ETH_USD_ORACLE,
 };
+
+/** All vault factory contracts the indexer and deploy resolver should recognize. */
+export function getKnownFactoryAddresses(): Address[] {
+  const addrs: Address[] = [];
+  if (config.vaultFactoryAddress) addrs.push(config.vaultFactoryAddress);
+  if (
+    config.legacyVaultFactoryAddress &&
+    config.legacyVaultFactoryAddress.toLowerCase() !== config.vaultFactoryAddress?.toLowerCase()
+  ) {
+    addrs.push(config.legacyVaultFactoryAddress);
+  }
+  for (const extra of config.extraVaultFactoryAddresses ?? []) {
+    const lower = extra.toLowerCase();
+    if (!addrs.some((a) => a.toLowerCase() === lower)) {
+      addrs.push(extra);
+    }
+  }
+  return addrs;
+}
 
 export const publicClient = createPublicClient({
   chain: somniaTestnet,

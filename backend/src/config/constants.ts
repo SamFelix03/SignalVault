@@ -13,13 +13,18 @@ export const EXPLORER_URL = 'https://shannon-explorer.somnia.network';
 export const AGENT_REQUESTER_ADDRESS = '0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776' as Address;
 export const REACTIVITY_PRECOMPILE = '0x0000000000000000000000000000000000000100' as Address;
 
+/** Default Somnia reactivity handler gas (non-mirror subscriptions). */
+export const DEFAULT_HANDLER_GAS_LIMIT = 10_000_000;
+/** Perp mirror subscriptions — PerpRouter v3 needs ~22M gas per callback. */
+export const MIRROR_HANDLER_GAS_LIMIT = 30_000_000;
+
 // ── Protofire Oracles (Somnia testnet) ──────────────────────────────
 export const ETH_USD_ORACLE = '0xd9132c1d762D432672493F640a63B758891B449e' as Address;
 
 // ── SignalVault Deployed Contracts (Somnia Testnet) ─────────────────
-export const VAULT_FACTORY_ADDRESS = (process.env.VAULT_FACTORY_ADDRESS || '0xcA1E5CDD728A878b0453875d9e5A50EABaF328Aa') as Address;
-export const LEGACY_VAULT_FACTORY_ADDRESS = (process.env.LEGACY_VAULT_FACTORY_ADDRESS || '0x4e4D20D7bc954FDe4C447a21255B9eD39cfAb938') as Address;
-export const EXTRA_VAULT_FACTORY_ADDRESSES = (process.env.EXTRA_VAULT_FACTORY_ADDRESSES || '0x68491CE1f69E8B0DFC25a1F6DE51A1a15825E612,0x5C5E7222C2Ed5DE198398F67d7574cAa87012E9e')
+export const VAULT_FACTORY_ADDRESS = (process.env.VAULT_FACTORY_ADDRESS || '0x14ac542754707570A5924aF77e978Af97ab52FFF') as Address;
+export const LEGACY_VAULT_FACTORY_ADDRESS = (process.env.LEGACY_VAULT_FACTORY_ADDRESS || '0x9A4f07DE4Bb41F4792a397Bc1ef35Bed60484101') as Address;
+export const EXTRA_VAULT_FACTORY_ADDRESSES = (process.env.EXTRA_VAULT_FACTORY_ADDRESSES || '0xf0e1E3012DE65F388bc68cf587858C2d738dE0a3,0xDB8529BEc20D34322849eE63cD5D8D02eF23d76C,0xbde6Cab60d8Dc35D03a33Fc3429b681310E6331D,0x173A9804394041E6299db8962A4325756D0bbF83,0x68491CE1f69E8B0DFC25a1F6DE51A1a15825E612,0x5C5E7222C2Ed5DE198398F67d7574cAa87012E9e')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean) as Address[];
@@ -30,7 +35,13 @@ export const DEMO_MIRROR_REACTOR = (process.env.DEMO_MIRROR_REACTOR || '0x5a213B
 export const DEMO_PERFORMANCE_LEDGER = (process.env.DEMO_PERFORMANCE_LEDGER || '0x92997bc11aEA5437b51275e75259f0DA1058A2fF') as Address;
 export const PERFORMANCE_LEDGER_ADDRESS = (process.env.PERFORMANCE_LEDGER_ADDRESS || DEMO_PERFORMANCE_LEDGER) as Address;
 
-// ── dreamDEX (Somnia Testnet) ───────────────────────────────────────
+// ── dreamDEX Event Contracts (Somnia Testnet) ───────────────────────
+export const BINARY_MARKETS_MODULE = '0x3ecC694Cef705358864a646142ac17A90E29e388' as Address;
+export const TESTNET_TUSDC = '0x70a86D8842FB63C4Ad2b7cdddF530eBf1BB25d8E' as Address;
+export const MARKETS_INDEXER_URL =
+  process.env.MARKETS_INDEXER_URL || 'https://dev.smk.somnia.host/v1/graphql';
+
+// ── dreamDEX legacy spot (Somnia Testnet) ───────────────────────────
 export const DREAMDEX_WETH_POOL = '0xD180195da5459C7a0DEA188ed61216ec43682b50' as Address;
 export const DREAMDEX_WETH_STOP_REGISTRY = '0xf822D4Cb94902d667c9650e702aA5f096cc7598F' as Address;
 
@@ -50,7 +61,7 @@ export const PIPELINE_TIMEOUT_SEC = 90;
 
 // ── Data Stream Schemas ─────────────────────────────────────────────
 export const SIGNAL_SCHEMA =
-  'uint64 timestamp, address vault, int8 direction, uint16 sizeBps, uint256 stopPrice, bytes32 reasoningHash, string reasoning';
+  'uint64 timestamp, address vault, int8 direction, uint16 sizeBps, bytes32 marketId, uint256 limitPrice, bytes32 reasoningHash, string reasoning';
 
 export const PNL_SCHEMA =
   'uint64 timestamp, address vault, address follower, int8 direction, uint256 entryPrice, uint256 exitPrice, int256 pnlBps, bytes32 signalHash';

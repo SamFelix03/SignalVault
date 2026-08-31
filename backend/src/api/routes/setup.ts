@@ -20,6 +20,8 @@ setupRouter.post('/resolve', async (req: Request, res: Response) => {
       return;
     }
 
+    logger.info(CTX, 'POST /api/setup/resolve', { txHash });
+
     const deployment = await resolveVaultFromDeployTx(txHash);
     await vaultIndexer.forceIndexVault(deployment.vaultAddress);
     await followerVaultIndex.syncVault(deployment.vaultAddress);
