@@ -163,9 +163,7 @@ IMPL_PUBLISHER=$(resolve_impl \
   IMPL_PUBLISHER SKIP_PUBLISHER \
   ExternalSignalPublisher "src/core/ExternalSignalPublisher.sol:ExternalSignalPublisher")
 
-PAYMENT_TOKEN=$(resolve_impl \
-  PAYMENT_TOKEN SKIP_PAYMENT_TOKEN \
-  SignalPayToken "src/finance/SignalPayToken.sol:SignalPayToken")
+TUSDC_COLLATERAL="0x70a86D8842FB63C4Ad2b7cdddF530eBf1BB25d8E"
 
 echo "" >&2
 echo "=== Deploying VaultFactory ===" >&2
@@ -202,17 +200,6 @@ else
     fi
   fi
   verify_deployed "$FACTORY" VaultFactory
-
-  if [[ -n "$PAYMENT_TOKEN" ]]; then
-    echo "" >&2
-    echo "=== Setting payment token on VaultFactory ===" >&2
-    SET_TX=$(cast send "$FACTORY" "setPaymentToken(address)" "$PAYMENT_TOKEN" \
-      --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" 2>&1) || {
-      echo "$SET_TX" >&2
-      echo "WARN: setPaymentToken failed — run manually after deploy" >&2
-    }
-    echo "$SET_TX" >&2
-  fi
 fi
 
 BALANCE_AFTER=$(balance_stt)
@@ -229,7 +216,7 @@ cat > "$OUT_FILE" <<EOF
   "deployedAt": "$TIMESTAMP",
   "deployer": "$DEPLOYER",
   "vaultFactory": "$FACTORY",
-  "paymentToken": "$PAYMENT_TOKEN",
+  "collateralToken": "$TUSDC_COLLATERAL",
   "implementations": {
     "strategyVault": "$IMPL_STRATEGY_VAULT",
     "agentOrchestrator": "$IMPL_AGENT_ORCHESTRATOR",
@@ -256,8 +243,7 @@ echo "Artifacts: $OUT_FILE"
 echo ""
 echo "Next steps:"
 echo "  1. Update backend/.env:  VAULT_FACTORY_ADDRESS=$FACTORY"
-echo "                         PAYMENT_TOKEN_ADDRESS=$PAYMENT_TOKEN"
-echo "  2. Update frontend/.env: NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS=$PAYMENT_TOKEN"
-echo "  3. Update frontend/src/lib/constants.ts with VAULT_FACTORY_ADDRESS"
+echo "  2. Update frontend/src/lib/constants.ts with VAULT_FACTORY_ADDRESS"
+echo "  3. Signal fees + mirror trades use tUSDC: $TUSDC_COLLATERAL"
 echo "  4. Deploy demo vault:    cd backend && npx tsx src/scripts/deploy-demo-vault.ts"
 echo "  5. Register subs:        cd backend && npx tsx src/scripts/register-subscriptions.ts"
